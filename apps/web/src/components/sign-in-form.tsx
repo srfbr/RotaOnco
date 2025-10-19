@@ -1,9 +1,10 @@
 import { authClient } from "@/lib/auth-client";
+import { useAuthSession } from "@/providers/auth-session-provider";
 import { useForm } from "@tanstack/react-form";
 import { useNavigate } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { toast } from "sonner";
 import z from "zod";
-import Loader from "./loader";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -16,7 +17,15 @@ export default function SignInForm({
 	const navigate = useNavigate({
 		from: "/",
 	});
-	const { isPending } = authClient.useSession();
+	const { isAuthenticated } = useAuthSession();
+
+	useEffect(() => {
+		if (isAuthenticated) {
+			navigate({
+				to: "/dashboard",
+			});
+		}
+	}, [isAuthenticated, navigate]);
 
 	const form = useForm({
 		defaultValues: {
@@ -49,10 +58,6 @@ export default function SignInForm({
 			}),
 		},
 	});
-
-	if (isPending) {
-		return <Loader />;
-	}
 
 	return (
 		<div className="mx-auto w-full mt-10 max-w-md p-6">

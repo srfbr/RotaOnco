@@ -1,0 +1,1741 @@
+openapi: 3.0.3
+info:
+  title: RotaOnco API
+  version: 0.1.0
+  description: |
+    API unificada do RotaOnco para Web (profissionais/administradores) e Mobile (pacientes).
+    
+    - Autenticação profissional/admin via Better Auth (Bearer JWT).
+    - Sessões de paciente via cookie HttpOnly `patient_session` emitido após validação de PIN de 6 dígitos.
+    - RBAC com papéis `admin`, `professional` e `patient`. Operações listam papéis permitidos em `x-roles`.
+    - Todos os endpoints retornam erros no formato padronizado `ErrorResponse`.
+servers:
+  - url: http://localhost:8787
+    description: Ambiente local (dev)
+  - url: https://api.staging.rotaonco.com
+    description: Staging
+  - url: https://api.rotaonco.com
+    description: Produção
+security:
+  - ProfessionalAuth: []
+tags:
+  - name: Auth
+    description: Fluxos de autenticação e sessão.
+  - name: Professionals
+    description: Gestão de profissionais e administradores.
+  - name: Patients
+    description: Cadastro e gerenciamento de pacientes.
+  - name: Appointments
+    description: Agenda, confirmações e gestão de consultas.
+  - name: Occurrences
+    description: Registro e consulta de intercorrências clínicas.
+  - name: Alerts
+    description: Gestão de alertas de risco e acompanhamento.
+  - name: Reports
+    description: Indicadores clínicos e exportações.
+  - name: Notifications
+    description: Disparo de lembretes e mensagens outbound.
+paths:
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Autentica profissional ou administrador.
+      description: Retorna tokens JWT Better Auth e informações de sessão.
+      operationId: loginProfessional
+      x-roles: [professional, admin]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Autenticado com sucesso.
+          headers:
+            RateLimit-Limit:
+              $ref: '#/components/headers/RateLimit-Limit'
+            RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimit-Remaining'
+            RateLimit-Reset:
+              $ref: '#/components/headers/RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken:
+                    type: string
+                  refreshToken:
+                    type: string
+                  expiresIn:
+                    type: integer
+                    format: int32
+                    description: Tempo de expiração em segundos.
+                  user:
+                    $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/Error'
+  /auth/patient-pin:
+    post:
+      tags: [Auth]
+      summary: Inicia sessão de paciente via PIN de 6 dígitos.
+      description: Valida PIN e retorna cookie `patient_session` HttpOnly.
+      operationId: loginPatient
+      security: []
+      x-roles: [patient]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cpf, pin]
+              properties:
+                cpf:
+                  type: string
+                  pattern: '^\d{11}$'
+                  description: CPF do paciente.
+                pin:
+                  type: string
+                  pattern: '^\d{6}$'
+                  description: PIN de 6 dígitos.
+      responses:
+        '204':
+          description: Sessão iniciada; cookie `patient_session` configurado.
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: Cookie HttpOnly com token de sessão de paciente.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '423':
+          description: Paciente temporariamente bloqueado após tentativas inválidas.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          $ref: '#/components/responses/Error'
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Renova tokens de sessão profissional/admin.
+      operationId: refreshToken
+      security: []
+      x-roles: [professional, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '200':
+          description: Token renovado.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken:
+                    type: string
+                  refreshToken:
+                    type: string
+                  expiresIn:
+                    type: integer
+                    format: int32
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/Error'
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Encerra sessão atual (profissional/admin ou paciente).
+      operationId: logout
+      x-roles: [professional, admin, patient]
+      security:
+        - ProfessionalAuth: []
+        - PatientSession: []
+      responses:
+        '204':
+          description: Logout efetuado.
+        default:
+          $ref: '#/components/responses/Error'
+  /professionals:
+    post:
+      tags: [Professionals]
+      summary: Cria ou convida um profissional.
+      description: Disponível apenas para administradores. Usa Idempotency-Key para evitar duplicidade.
+      operationId: inviteProfessional
+      x-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfessionalCreateInput'
+      responses:
+        '201':
+          description: Profissional criado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+    get:
+      tags: [Professionals]
+      summary: Lista profissionais com filtros básicos.
+      operationId: listProfessionals
+      x-roles: [admin]
+      parameters:
+        - in: query
+          name: q
+          schema:
+            type: string
+          description: Busca por nome, e-mail ou documento.
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Lista paginada de profissionais.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedUsers'
+        default:
+          $ref: '#/components/responses/Error'
+  /professionals/{id}:
+    get:
+      tags: [Professionals]
+      summary: Detalha profissional.
+      operationId: getProfessional
+      x-roles: [admin, professional]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Profissional encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [Professionals]
+      summary: Atualiza dados do profissional.
+      operationId: updateProfessional
+      x-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfessionalUpdateInput'
+      responses:
+        '200':
+          description: Profissional atualizado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /patients:
+    post:
+      tags: [Patients]
+      summary: Cadastra novo paciente.
+      operationId: createPatient
+      x-roles: [professional, admin]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatientCreateInput'
+      responses:
+        '201':
+          description: Paciente criado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Patient'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+    get:
+      tags: [Patients]
+      summary: Lista pacientes com filtros.
+      operationId: listPatients
+      x-roles: [professional, admin]
+      parameters:
+        - in: query
+          name: q
+          schema:
+            type: string
+          description: Busca por nome ou CPF.
+        - in: query
+          name: status
+          schema:
+            $ref: '#/components/schemas/PatientStatus'
+        - in: query
+          name: stage
+          schema:
+            $ref: '#/components/schemas/PatientStage'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Lista paginada de pacientes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPatients'
+        default:
+          $ref: '#/components/responses/Error'
+  /patients/search:
+    get:
+      tags: [Patients]
+      summary: Busca rápida de pacientes.
+      operationId: searchPatients
+      x-roles: [professional, admin]
+      parameters:
+        - in: query
+          name: q
+          required: true
+          schema:
+            type: string
+          description: Termo de busca (nome ou CPF).
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            format: int32
+            default: 10
+      responses:
+        '200':
+          description: Resultados da busca.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PatientSummary'
+        default:
+          $ref: '#/components/responses/Error'
+  /patients/{id}:
+    get:
+      tags: [Patients]
+      summary: Detalha paciente.
+      operationId: getPatient
+      x-roles: [professional, admin]
+      parameters:
+        - $ref: '#/components/parameters/PatientId'
+      responses:
+        '200':
+          description: Paciente encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [Patients]
+      summary: Atualiza paciente.
+      operationId: updatePatient
+      x-roles: [professional, admin]
+      parameters:
+        - $ref: '#/components/parameters/PatientId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatientUpdateInput'
+      responses:
+        '200':
+          description: Paciente atualizado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Patient'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Patients]
+      summary: Arquiva paciente.
+      operationId: archivePatient
+      x-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/PatientId'
+      responses:
+        '204':
+          description: Paciente arquivado.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /patients/{id}/contacts:
+    get:
+      tags: [Patients]
+      summary: Lista contatos do paciente.
+      operationId: listPatientContacts
+      x-roles: [professional, admin]
+      parameters:
+        - $ref: '#/components/parameters/PatientId'
+      responses:
+        '200':
+          description: Contatos do paciente.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PatientContact'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Patients]
+      summary: Adiciona contato de paciente.
+      operationId: addPatientContact
+      x-roles: [professional, admin]
+      parameters:
+        - $ref: '#/components/parameters/PatientId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatientContactInput'
+      responses:
+        '201':
+          description: Contato criado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientContact'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        default:
+          $ref: '#/components/responses/Error'
+  /patients/{id}/status-history:
+    get:
+      tags: [Patients]
+      summary: Histórico de estágio/status.
+      operationId: listPatientStatusHistory
+      x-roles: [professional, admin]
+      parameters:
+        - $ref: '#/components/parameters/PatientId'
+      responses:
+        '200':
+          description: Histórico do paciente.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PatientStatusHistory'
+        default:
+          $ref: '#/components/responses/Error'
+  /patients/me:
+    get:
+      tags: [Patients]
+      summary: Dados do paciente autenticado via app.
+      operationId: getMyPatientProfile
+      x-roles: [patient]
+      security:
+        - PatientSession: []
+      responses:
+        '200':
+          description: Perfil do paciente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientMobileView'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/Error'
+  /appointments:
+    post:
+      tags: [Appointments]
+      summary: Cria consulta/agendamento.
+      operationId: createAppointment
+      x-roles: [professional, admin]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppointmentCreateInput'
+      responses:
+        '201':
+          description: Consulta criada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Appointment'
+        '409':
+          description: Conflito de horário.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          $ref: '#/components/responses/Error'
+    get:
+      tags: [Appointments]
+      summary: Lista consultas.
+      operationId: listAppointments
+      x-roles: [professional, admin]
+      parameters:
+        - in: query
+          name: day
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: patientId
+          schema:
+            type: integer
+            format: int64
+        - in: query
+          name: professionalId
+          schema:
+            type: integer
+            format: int64
+        - in: query
+          name: status
+          schema:
+            $ref: '#/components/schemas/AppointmentStatus'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Lista paginada de consultas.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAppointments'
+        default:
+          $ref: '#/components/responses/Error'
+  /appointments/{id}:
+    get:
+      tags: [Appointments]
+      summary: Detalha consulta.
+      operationId: getAppointment
+      x-roles: [professional, admin]
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+      responses:
+        '200':
+          description: Consulta encontrada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [Appointments]
+      summary: Atualiza consulta.
+      operationId: updateAppointment
+      x-roles: [professional, admin]
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppointmentUpdateInput'
+      responses:
+        '200':
+          description: Consulta atualizada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Appointment'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Appointments]
+      summary: Cancela consulta.
+      operationId: cancelAppointment
+      x-roles: [professional, admin]
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+      responses:
+        '204':
+          description: Consulta cancelada.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /appointments/{id}/confirm:
+    post:
+      tags: [Appointments]
+      summary: Confirma presença de paciente.
+      operationId: confirmAppointment
+      x-roles: [patient]
+      security:
+        - PatientSession: []
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+      responses:
+        '204':
+          description: Presença confirmada.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /appointments/{id}/decline:
+    post:
+      tags: [Appointments]
+      summary: Paciente informa que não poderá comparecer.
+      operationId: declineAppointment
+      x-roles: [patient]
+      security:
+        - PatientSession: []
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        '204':
+          description: Ausência registrada.
+        default:
+          $ref: '#/components/responses/Error'
+  /appointments/{id}/status:
+    post:
+      tags: [Appointments]
+      summary: Atualiza status de consulta (profissional/admin).
+      operationId: updateAppointmentStatus
+      x-roles: [professional, admin]
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  $ref: '#/components/schemas/AppointmentStatus'
+                notes:
+                  type: string
+      responses:
+        '204':
+          description: Status atualizado.
+        default:
+          $ref: '#/components/responses/Error'
+  /patients/{id}/occurrences:
+    post:
+      tags: [Occurrences]
+      summary: Registra intercorrência para paciente.
+      operationId: createOccurrence
+      x-roles: [professional]
+      parameters:
+        - $ref: '#/components/parameters/PatientId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OccurrenceCreateInput'
+      responses:
+        '201':
+          description: Intercorrência registrada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Occurrence'
+        default:
+          $ref: '#/components/responses/Error'
+    get:
+      tags: [Occurrences]
+      summary: Lista intercorrências do paciente.
+      operationId: listOccurrences
+      x-roles: [professional, admin]
+      parameters:
+        - $ref: '#/components/parameters/PatientId'
+      responses:
+        '200':
+          description: Lista de intercorrências.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Occurrence'
+        default:
+          $ref: '#/components/responses/Error'
+  /alerts:
+    get:
+      tags: [Alerts]
+      summary: Lista alertas com filtros.
+      operationId: listAlerts
+      x-roles: [professional, admin]
+      parameters:
+        - in: query
+          name: status
+          schema:
+            $ref: '#/components/schemas/AlertStatus'
+        - in: query
+          name: severity
+          schema:
+            $ref: '#/components/schemas/AlertSeverity'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Lista paginada de alertas.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAlerts'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Alerts]
+      summary: Cria alerta manualmente.
+      operationId: createAlert
+      x-roles: [professional, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertCreateInput'
+      responses:
+        '201':
+          description: Alerta criado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Alert'
+        default:
+          $ref: '#/components/responses/Error'
+  /alerts/{id}:
+    get:
+      tags: [Alerts]
+      summary: Detalha alerta.
+      operationId: getAlert
+      x-roles: [professional, admin]
+      parameters:
+        - $ref: '#/components/parameters/AlertId'
+      responses:
+        '200':
+          description: Alerta encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Alert'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    patch:
+      tags: [Alerts]
+      summary: Atualiza status ou resolução do alerta.
+      operationId: updateAlert
+      x-roles: [professional, admin]
+      parameters:
+        - $ref: '#/components/parameters/AlertId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertUpdateInput'
+      responses:
+        '200':
+          description: Alerta atualizado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Alert'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /reports/attendance:
+    get:
+      tags: [Reports]
+      summary: Indicadores de comparecimento.
+      operationId: getAttendanceReport
+      x-roles: [professional, admin]
+      parameters:
+        - $ref: '#/components/parameters/ReportRangeStart'
+        - $ref: '#/components/parameters/ReportRangeEnd'
+      responses:
+        '200':
+          description: Métricas de frequência.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttendanceReport'
+        default:
+          $ref: '#/components/responses/Error'
+  /reports/wait-times:
+    get:
+      tags: [Reports]
+      summary: Tempos de espera entre etapas.
+      operationId: getWaitTimesReport
+      x-roles: [professional, admin]
+      parameters:
+        - $ref: '#/components/parameters/ReportRangeStart'
+        - $ref: '#/components/parameters/ReportRangeEnd'
+      responses:
+        '200':
+          description: Métricas de tempo de espera.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WaitTimesReport'
+        default:
+          $ref: '#/components/responses/Error'
+  /reports/adherence:
+    get:
+      tags: [Reports]
+      summary: Indicadores de adesão ao tratamento.
+      operationId: getAdherenceReport
+      x-roles: [professional, admin]
+      parameters:
+        - $ref: '#/components/parameters/ReportRangeStart'
+        - $ref: '#/components/parameters/ReportRangeEnd'
+      responses:
+        '200':
+          description: Métricas de adesão.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdherenceReport'
+        default:
+          $ref: '#/components/responses/Error'
+  /reports/adverse-effects:
+    get:
+      tags: [Reports]
+      summary: Relatório de intercorrências adversas.
+      operationId: getAdverseEffectsReport
+      x-roles: [professional, admin]
+      parameters:
+        - $ref: '#/components/parameters/ReportRangeStart'
+        - $ref: '#/components/parameters/ReportRangeEnd'
+      responses:
+        '200':
+          description: Estatísticas de efeitos adversos.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdverseEffectsReport'
+        default:
+          $ref: '#/components/responses/Error'
+  /reports/{kind}/export:
+    get:
+      tags: [Reports]
+      summary: Exporta relatórios em PDF ou XLSX.
+      operationId: exportReport
+      x-roles: [admin]
+      parameters:
+        - in: path
+          name: kind
+          required: true
+          schema:
+            type: string
+            enum: [attendance, wait-times, adherence, adverse-effects]
+        - in: query
+          name: format
+          required: true
+          schema:
+            type: string
+            enum: [pdf, xlsx]
+        - $ref: '#/components/parameters/ReportRangeStart'
+        - $ref: '#/components/parameters/ReportRangeEnd'
+      responses:
+        '200':
+          description: Arquivo gerado.
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        default:
+          $ref: '#/components/responses/Error'
+  /notifications/appointment-reminders:
+    post:
+      tags: [Notifications]
+      summary: Agendamento/disparo de lembretes de consulta.
+      operationId: enqueueAppointmentReminders
+      x-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [appointments]
+              properties:
+                appointments:
+                  type: array
+                  items:
+                    type: object
+                    required: [appointmentId, channel, scheduledFor]
+                    properties:
+                      appointmentId:
+                        type: integer
+                        format: int64
+                      channel:
+                        $ref: '#/components/schemas/ReminderChannel'
+                      scheduledFor:
+                        type: string
+                        format: date-time
+      responses:
+        '202':
+          description: Lembretes enfileirados.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enqueued:
+                    type: integer
+                    format: int32
+        default:
+          $ref: '#/components/responses/Error'
+components:
+  securitySchemes:
+    ProfessionalAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    PatientSession:
+      type: apiKey
+      in: cookie
+      name: patient_session
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+        maximum: 100
+        default: 20
+      description: Número máximo de itens retornados.
+    Offset:
+      name: offset
+      in: query
+      schema:
+        type: integer
+        format: int32
+        minimum: 0
+        default: 0
+      description: Deslocamento para paginação baseada em offset.
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Identificador idempotente por requisição (UUID recomendado).
+    UserId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    PatientId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    AppointmentId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    AlertId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    ReportRangeStart:
+      name: start
+      in: query
+      schema:
+        type: string
+        format: date
+      description: Data inicial do intervalo (inclusive).
+    ReportRangeEnd:
+      name: end
+      in: query
+      schema:
+        type: string
+        format: date
+      description: Data final do intervalo (inclusive).
+  headers:
+    RateLimit-Limit:
+      schema:
+        type: integer
+        format: int32
+      description: Limite de requisições permitido na janela.
+    RateLimit-Remaining:
+      schema:
+        type: integer
+        format: int32
+      description: Requisições restantes na janela atual.
+    RateLimit-Reset:
+      schema:
+        type: integer
+        format: int64
+      description: Epoch (segundos) até o reset do limite.
+  responses:
+    BadRequest:
+      description: Requisição inválida.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Autenticação necessária ou inválida.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Recurso não encontrado.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Violação de unicidade ou estado inconsistente.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Error:
+      description: Erro inesperado.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Código simbólico do erro.
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+    PaginationMeta:
+      type: object
+      required: [total, limit, offset]
+      properties:
+        total:
+          type: integer
+          format: int32
+        limit:
+          type: integer
+          format: int32
+        offset:
+          type: integer
+          format: int32
+    User:
+      type: object
+      required:
+        - id
+        - name
+        - email
+        - documentId
+        - isActive
+        - roles
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        documentId:
+          type: string
+        specialty:
+          type: string
+        phone:
+          type: string
+        isActive:
+          type: boolean
+        roles:
+          type: array
+          items:
+            type: string
+            enum: [admin, professional]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ProfessionalCreateInput:
+      type: object
+      required: [name, email, documentId, roles]
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        documentId:
+          type: string
+          description: CPF/CRM/CRO conforme papel.
+        specialty:
+          type: string
+        phone:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+            enum: [admin, professional]
+          minItems: 1
+    ProfessionalUpdateInput:
+      allOf:
+        - $ref: '#/components/schemas/ProfessionalCreateInput'
+    PatientStage:
+      type: string
+      enum: [pre_triage, in_treatment, post_treatment]
+    PatientStatus:
+      type: string
+      enum: [active, inactive, at_risk]
+    Patient:
+      type: object
+      required:
+        - id
+        - fullName
+        - cpf
+        - status
+        - stage
+      properties:
+        id:
+          type: integer
+          format: int64
+        fullName:
+          type: string
+        cpf:
+          type: string
+          pattern: '^\d{11}$'
+        birthDate:
+          type: string
+          format: date
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        emergencyPhone:
+          type: string
+          nullable: true
+        tumorType:
+          type: string
+          nullable: true
+        clinicalUnit:
+          type: string
+          nullable: true
+        stage:
+          $ref: '#/components/schemas/PatientStage'
+        status:
+          $ref: '#/components/schemas/PatientStatus'
+        audioMaterialUrl:
+          type: string
+          format: uri
+          nullable: true
+        pinAttempts:
+          type: integer
+          format: int32
+        pinBlockedUntil:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    PatientSummary:
+      type: object
+      required: [id, fullName, cpf, status]
+      properties:
+        id:
+          type: integer
+          format: int64
+        fullName:
+          type: string
+        cpf:
+          type: string
+        stage:
+          $ref: '#/components/schemas/PatientStage'
+        status:
+          $ref: '#/components/schemas/PatientStatus'
+    PatientDetail:
+      allOf:
+        - $ref: '#/components/schemas/Patient'
+        - type: object
+          properties:
+            contacts:
+              type: array
+              items:
+                $ref: '#/components/schemas/PatientContact'
+            occurrences:
+              type: array
+              items:
+                $ref: '#/components/schemas/Occurrence'
+            alerts:
+              type: array
+              items:
+                $ref: '#/components/schemas/Alert'
+    PatientCreateInput:
+      type: object
+      required:
+        - fullName
+        - cpf
+        - pin
+      properties:
+        fullName:
+          type: string
+        cpf:
+          type: string
+          pattern: '^\d{11}$'
+        birthDate:
+          type: string
+          format: date
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        emergencyPhone:
+          type: string
+          nullable: true
+        tumorType:
+          type: string
+          nullable: true
+        clinicalUnit:
+          type: string
+          nullable: true
+        stage:
+          $ref: '#/components/schemas/PatientStage'
+        status:
+          $ref: '#/components/schemas/PatientStatus'
+        audioMaterialUrl:
+          type: string
+          format: uri
+          nullable: true
+        pin:
+          type: string
+          pattern: '^\d{6}$'
+          description: PIN de 6 dígitos, será armazenado como hash Argon2.
+        contacts:
+          type: array
+          items:
+            $ref: '#/components/schemas/PatientContactInput'
+    PatientUpdateInput:
+      type: object
+      properties:
+        fullName:
+          type: string
+        birthDate:
+          type: string
+          format: date
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        emergencyPhone:
+          type: string
+          nullable: true
+        tumorType:
+          type: string
+          nullable: true
+        clinicalUnit:
+          type: string
+          nullable: true
+        stage:
+          $ref: '#/components/schemas/PatientStage'
+        status:
+          $ref: '#/components/schemas/PatientStatus'
+        audioMaterialUrl:
+          type: string
+          format: uri
+          nullable: true
+    PatientContact:
+      type: object
+      required: [id, fullName, relation, phone]
+      properties:
+        id:
+          type: integer
+          format: int64
+        fullName:
+          type: string
+        relation:
+          type: string
+        phone:
+          type: string
+        isPrimary:
+          type: boolean
+          default: false
+    PatientContactInput:
+      type: object
+      required: [fullName, relation, phone]
+      properties:
+        fullName:
+          type: string
+        relation:
+          type: string
+        phone:
+          type: string
+        isPrimary:
+          type: boolean
+          default: false
+    PatientStatusHistory:
+      type: object
+      required: [id, stage, status, recordedAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        stage:
+          $ref: '#/components/schemas/PatientStage'
+        status:
+          $ref: '#/components/schemas/PatientStatus'
+        reason:
+          type: string
+          nullable: true
+        recordedAt:
+          type: string
+          format: date-time
+        recordedBy:
+          type: integer
+          format: int64
+          nullable: true
+    PatientMobileView:
+      type: object
+      properties:
+        patient:
+          $ref: '#/components/schemas/Patient'
+        nextAppointments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Appointment'
+        audioMaterials:
+          type: array
+          items:
+            type: object
+            properties:
+              title:
+                type: string
+              url:
+                type: string
+                format: uri
+    Appointment:
+      type: object
+      required: [id, patientId, professionalId, startsAt, type, status]
+      properties:
+        id:
+          type: integer
+          format: int64
+        patientId:
+          type: integer
+          format: int64
+        professionalId:
+          type: integer
+          format: int64
+        startsAt:
+          type: string
+          format: date-time
+        type:
+          $ref: '#/components/schemas/AppointmentType'
+        status:
+          $ref: '#/components/schemas/AppointmentStatus'
+        notes:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    AppointmentDetail:
+      allOf:
+        - $ref: '#/components/schemas/Appointment'
+        - type: object
+          properties:
+            patient:
+              $ref: '#/components/schemas/PatientSummary'
+            professional:
+              $ref: '#/components/schemas/User'
+            reminders:
+              type: array
+              items:
+                $ref: '#/components/schemas/AppointmentReminder'
+    AppointmentType:
+      type: string
+      enum: [triage, treatment, return]
+    AppointmentStatus:
+      type: string
+      enum: [scheduled, confirmed, completed, no_show, canceled]
+    AppointmentCreateInput:
+      type: object
+      required: [patientId, professionalId, startsAt, type]
+      properties:
+        patientId:
+          type: integer
+          format: int64
+        professionalId:
+          type: integer
+          format: int64
+        startsAt:
+          type: string
+          format: date-time
+        type:
+          $ref: '#/components/schemas/AppointmentType'
+        notes:
+          type: string
+          nullable: true
+    AppointmentUpdateInput:
+      type: object
+      properties:
+        startsAt:
+          type: string
+          format: date-time
+        type:
+          $ref: '#/components/schemas/AppointmentType'
+        notes:
+          type: string
+    AppointmentReminder:
+      type: object
+      required: [id, appointmentId, channel, scheduledFor, status]
+      properties:
+        id:
+          type: integer
+          format: int64
+        appointmentId:
+          type: integer
+          format: int64
+        channel:
+          $ref: '#/components/schemas/ReminderChannel'
+        scheduledFor:
+          type: string
+          format: date-time
+        sentAt:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          $ref: '#/components/schemas/ReminderStatus'
+        error:
+          type: string
+          nullable: true
+    ReminderChannel:
+      type: string
+      enum: [whatsapp, sms]
+    ReminderStatus:
+      type: string
+      enum: [queued, sent, failed]
+    Occurrence:
+      type: object
+      required: [id, patientId, professionalId, kind, intensity, source, createdAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        patientId:
+          type: integer
+          format: int64
+        professionalId:
+          type: integer
+          format: int64
+        kind:
+          type: string
+        intensity:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 10
+        source:
+          type: string
+          enum: [patient, professional]
+        notes:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+    OccurrenceCreateInput:
+      type: object
+      required: [professionalId, kind, intensity, source]
+      properties:
+        professionalId:
+          type: integer
+          format: int64
+        kind:
+          type: string
+        intensity:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 10
+        source:
+          type: string
+          enum: [patient, professional]
+        notes:
+          type: string
+          nullable: true
+    Alert:
+      type: object
+      required: [id, patientId, kind, severity, status, createdAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        patientId:
+          type: integer
+          format: int64
+        kind:
+          type: string
+        severity:
+          $ref: '#/components/schemas/AlertSeverity'
+        status:
+          $ref: '#/components/schemas/AlertStatus'
+        details:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          type: string
+          format: date-time
+          nullable: true
+        resolvedBy:
+          type: integer
+          format: int64
+          nullable: true
+    AlertSeverity:
+      type: string
+      enum: [low, medium, high]
+    AlertStatus:
+      type: string
+      enum: [open, acknowledged, closed]
+    AlertCreateInput:
+      type: object
+      required: [patientId, kind, severity]
+      properties:
+        patientId:
+          type: integer
+          format: int64
+        kind:
+          type: string
+        severity:
+          $ref: '#/components/schemas/AlertSeverity'
+        details:
+          type: string
+          nullable: true
+    AlertUpdateInput:
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/AlertStatus'
+        details:
+          type: string
+        resolvedAt:
+          type: string
+          format: date-time
+        resolvedBy:
+          type: integer
+          format: int64
+    AttendanceReport:
+      type: object
+      properties:
+        period:
+          type: object
+          properties:
+            start:
+              type: string
+              format: date
+            end:
+              type: string
+              format: date
+        totals:
+          type: object
+          properties:
+            scheduled:
+              type: integer
+            confirmed:
+              type: integer
+            completed:
+              type: integer
+            noShow:
+              type: integer
+            cancellationRate:
+              type: number
+              format: float
+    WaitTimesReport:
+      type: object
+      properties:
+        averageDaysToTriage:
+          type: number
+          format: float
+        averageDaysToTreatment:
+          type: number
+          format: float
+        medianQueueTime:
+          type: number
+          format: float
+    AdherenceReport:
+      type: object
+      properties:
+        adherenceRate:
+          type: number
+          format: float
+        abandonmentRisk:
+          type: number
+          format: float
+        consecutiveAbsences:
+          type: integer
+          description: Número de pacientes com duas ou mais faltas consecutivas.
+    AdverseEffectsReport:
+      type: object
+      properties:
+        topOccurrences:
+          type: array
+          items:
+            type: object
+            properties:
+              kind:
+                type: string
+              count:
+                type: integer
+        severityBreakdown:
+          type: object
+          additionalProperties:
+            type: integer
+    PaginatedUsers:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    PaginatedPatients:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PatientSummary'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    PaginatedAppointments:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Appointment'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    PaginatedAlerts:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Alert'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'

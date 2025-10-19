@@ -6,15 +6,15 @@
 - Suporta perfis RBAC: paciente, profissional e administrador, com diferenciação de acessos e operações conforme perfil.
 
 ## Atores / Perfis
-- **Paciente**: acessa via PIN de 4 dígitos; visualiza consultas, confirma presença, acessa conteúdos em áudio, efetua ligações rápidas e botão de emergência; não envia mensagens/áudios.
-- **Profissional**: cadastro com validação institucional; gerencia agenda, pacientes, presenças/faltas, intercorrências e relatórios básicos.
+- **Paciente**: acessa via PIN de 6 dígitos; visualiza consultas, confirma presença, acessa conteúdos em áudio, efetua ligações rápidas e botão de emergência; não envia mensagens/áudios.
+- **Profissional**: cadastro com validação institucional; no web dashboard gerencia agenda, pacientes, presenças/faltas, intercorrências e relatórios básicos. No app mobile visualiza apenas seus pacientes, alertas (faltas consecutivas, intercorrências), compromissos marcados e ajustes de agenda (sem edição de perfil ou dados sensíveis adicionais).
 - **Administrador**: valida profissionais, gerencia permissões, configura parâmetros do sistema e acessa relatórios completos.
 
 ## Fluxos Essenciais
 - **Cadastro de profissional (RF001)**: submissão de dados, validação institucional por administrador e atribuição de papéis.
 - **Cadastro de paciente (RF002)**: registro com CPF como chave única, contatos de emergência e materiais de áudio.
 - **Login profissional (RF003)**: autenticação forte (Better Auth) com bloqueio após três falhas, sessão JWT.
-- **Login paciente via PIN (RF004)**: verificação de PIN de 4 dígitos, bloqueio temporário após três tentativas.
+- **Login paciente via PIN (RF004)**: verificação de PIN de 6 dígitos (sem CPF), bloqueio temporário após três tentativas.
 - **Agenda profissional (RF007/RF028)**: visualização diária, registro de presença/falta, atualização de status.
 - **Confirmação de presença (RF006)**: paciente confirma via app, atualiza status do agendamento.
 - **Registro de intercorrência (RF012)**: profissional (ou paciente supervisionado) lança ocorrência com tipo, intensidade e notas.

@@ -30,5 +30,5 @@ function HomeComponent() {
 				</section>
 			</div>
 		</div>
-	);
+	)
 }

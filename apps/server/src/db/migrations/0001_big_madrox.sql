@@ -1,0 +1,1 @@
+ALTER TABLE `patients` MODIFY COLUMN `pin_hash` varchar(191) NOT NULL;

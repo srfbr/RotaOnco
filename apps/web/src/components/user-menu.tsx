@@ -7,6 +7,7 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { authClient } from "@/lib/auth-client";
+import { useAuthSession } from "@/providers/auth-session-provider";
 import { useNavigate } from "@tanstack/react-router";
 import { Button } from "./ui/button";
 import { Skeleton } from "./ui/skeleton";
@@ -14,9 +15,9 @@ import { Link } from "@tanstack/react-router";
 
 export default function UserMenu() {
 	const navigate = useNavigate();
-	const { data: session, isPending } = authClient.useSession();
+	const { session, isLoading } = useAuthSession();
 
-	if (isPending) {
+	if (isLoading) {
 		return <Skeleton className="h-9 w-24" />;
 	}
 
