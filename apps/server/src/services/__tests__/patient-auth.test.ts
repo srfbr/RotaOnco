@@ -49,7 +49,7 @@ describe("createPatientAuthService", () => {
 		vi.spyOn(Bun.password, "verify").mockResolvedValue(true);
 		const service = createPatientAuthService({ patients: repo, audit, sessions });
 
-		const result = await service.loginWithPin({ cpf: basePatient.cpf, pin: "123456" });
+		const result = await service.loginWithPin({ cpf: basePatient.cpf, pin: "1234" });
 
 		expect(result.token).toBe("token");
 		expect(result.patient).toEqual(basePatient);
@@ -70,7 +70,7 @@ describe("createPatientAuthService", () => {
 		const service = createPatientAuthService({ patients: repo, audit, sessions });
 
 		await expect(
-			service.loginWithPin({ cpf: basePatient.cpf, pin: "000000" }),
+			service.loginWithPin({ cpf: basePatient.cpf, pin: "0000" }),
 		).rejects.toThrowError("PATIENT_PIN_BLOCKED");
 
 		expect(repo.recordFailedAttempt).toHaveBeenCalled();

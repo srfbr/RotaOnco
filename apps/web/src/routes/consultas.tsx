@@ -1,7 +1,7 @@
 import { AppLayout } from "@/components/app-layout";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { createFileRoute, redirect, useSearch } from "@tanstack/react-router";
+import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { AppointmentsHero } from "@/features/appointments/components/appointments-hero";
 import { AppointmentsList } from "@/features/appointments/components/appointments-list";
@@ -11,6 +11,7 @@ import { useAppointmentsList } from "@/features/appointments/hooks";
 import { parseISODate, toISODateString } from "@/features/appointments/utils";
 import type { AppointmentStatus } from "@/features/appointments/api";
 import { AppointmentCreateDialog } from "@/features/appointments/components/appointment-create-dialog";
+import { requireActiveProfessional } from "@/lib/route-guards";
 
 type StatusFilterValue = "all" | AppointmentStatus;
 
@@ -50,10 +51,7 @@ type AppointmentsSearch = { day: string; status: StatusFilterValue };
 
 export const Route = createFileRoute("/consultas")({
 	beforeLoad: async ({ context }) => {
-		const session = await context.authClient.getSession();
-		if (!session.data) {
-			throw redirect({ to: "/login" });
-		}
+		await requireActiveProfessional(context);
 	},
 	validateSearch: (search): AppointmentsSearch => ({
 		day: parseDay(search.day),

@@ -11,7 +11,9 @@ export type UserWithRoles = {
 	documentId?: string;
 	specialty?: string | null;
 	phone?: string | null;
+	avatarUrl?: string | null;
 	isActive?: boolean;
+	mustChangePassword?: boolean;
 	createdAt?: Date;
 	updatedAt?: Date;
 };
@@ -26,7 +28,9 @@ export async function findUserWithRolesByExternalId(externalId: string): Promise
 			documentId: users.documentId,
 			specialty: users.specialty,
 			phone: users.phone,
+			avatarUrl: users.avatarUrl,
 			isActive: users.isActive,
+			mustChangePassword: users.mustChangePassword,
 			createdAt: users.createdAt,
 			updatedAt: users.updatedAt,
 			role: roles.name,
@@ -41,7 +45,8 @@ export async function findUserWithRolesByExternalId(externalId: string): Promise
 	}
 
 	const { id } = rows[0];
-	const [{ name, email, documentId, specialty, phone, isActive, createdAt, updatedAt }] = rows;
+	const [{ name, email, documentId, specialty, phone, avatarUrl, isActive, createdAt, updatedAt }] =
+		rows;
 	const roleNames = Array.from(new Set(rows.map((row) => row.role).filter((name): name is string => Boolean(name))));
 
 	return {
@@ -53,7 +58,9 @@ export async function findUserWithRolesByExternalId(externalId: string): Promise
 		documentId,
 		specialty,
 		phone,
+		avatarUrl,
 		isActive,
+		mustChangePassword: rows[0]?.mustChangePassword,
 		createdAt,
 		updatedAt,
 	};

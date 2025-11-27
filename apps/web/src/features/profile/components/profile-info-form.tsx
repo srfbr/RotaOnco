@@ -1,8 +1,9 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent, type ReactNode, type HTMLInputTypeAttribute } from "react";
 import type { ProfileViewModel } from "../types";
+import type { ProfessionalProfileUpdateInput } from "../api";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { UserRound, Stethoscope, IdCard, Phone, Lock, Mail } from "lucide-react";
+import { Loader2, UserRound, Stethoscope, IdCard, Phone, Lock, Mail } from "lucide-react";
 import { toast } from "sonner";
 
 const FIELD_ICON_CLASS = "h-4 w-4 text-[#9CA3AF]";
@@ -10,10 +11,14 @@ const FIELD_ICON_CLASS = "h-4 w-4 text-[#9CA3AF]";
 type ProfileInfoFormProps = {
 	profile?: ProfileViewModel | null;
 	isLoading: boolean;
+	onSubmit: (payload: ProfessionalProfileUpdateInput) => Promise<void>;
+	isSubmitting: boolean;
 };
 
-export function ProfileInfoForm({ profile, isLoading }: ProfileInfoFormProps) {
-	const [formState, setFormState] = useState(() => createFormState(profile));
+type FormState = ReturnType<typeof createFormState>;
+
+export function ProfileInfoForm({ profile, isLoading, onSubmit, isSubmitting }: ProfileInfoFormProps) {
+	const [formState, setFormState] = useState<FormState>(() => createFormState(profile));
 
 	useEffect(() => {
 		setFormState(createFormState(profile));
@@ -24,12 +29,22 @@ export function ProfileInfoForm({ profile, isLoading }: ProfileInfoFormProps) {
 			setFormState((prev) => ({ ...prev, [field]: event.target.value }));
 		};
 
-	const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+	const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
-		toast.info("Atualização de dados disponível em breve");
+		if (!profile) {
+			return;
+		}
+
+		const payload = buildUpdatePayload(formState, profile);
+		if (Object.keys(payload).length === 0) {
+			toast.info("Nenhuma alteração para salvar.");
+			return;
+		}
+
+		await onSubmit(payload);
 	};
 
-	const isDisabled = isLoading || !profile;
+	const isDisabled = isLoading || !profile || isSubmitting;
 
 	return (
 		<section className="flex flex-1 flex-col gap-6 rounded-xl border border-[#E5E5E5] bg-white p-8">
@@ -53,7 +68,7 @@ export function ProfileInfoForm({ profile, isLoading }: ProfileInfoFormProps) {
 					<Field label="Documento" icon={<IdCard className={FIELD_ICON_CLASS} />}
 						value={formState.document}
 						onChange={handleChange("document")}
-						disabled={isDisabled}
+						disabled
 					/>
 					<Field label="Telefone" icon={<Phone className={FIELD_ICON_CLASS} />}
 						value={formState.phone}
@@ -73,8 +88,19 @@ export function ProfileInfoForm({ profile, isLoading }: ProfileInfoFormProps) {
 				</div>
 
 				<div className="flex justify-end">
-					<Button type="submit" className="gap-2 bg-[#3663D8] text-white hover:bg-[#2D52B1]" disabled={isDisabled}>
-						Atualizar dados
+					<Button
+						type="submit"
+						className="gap-2 bg-[#3663D8] text-white hover:bg-[#2D52B1]"
+						disabled={isDisabled}
+					>
+						{isSubmitting ? (
+							<>
+								<Loader2 className="h-4 w-4 animate-spin" />
+								Salvando...
+							</>
+						) : (
+							"Atualizar dados"
+						)}
 					</Button>
 				</div>
 			</form>
@@ -123,4 +149,30 @@ function createFormState(profile?: ProfileViewModel | null) {
 		password: "************",
 		email: profile?.email ?? "",
 	};
+}
+
+function buildUpdatePayload(formState: FormState, profile: ProfileViewModel): ProfessionalProfileUpdateInput {
+	const payload: ProfessionalProfileUpdateInput = {};
+
+	const trimmedName = formState.fullName.trim();
+	if (trimmedName.length > 0 && trimmedName !== profile.fullName) {
+		payload.name = trimmedName;
+	}
+
+	const normalizedSpecialty = normalizeOptionalValue(formState.specialty);
+	if ((normalizedSpecialty ?? null) !== (profile.specialty ?? null)) {
+		payload.specialty = normalizedSpecialty ?? null;
+	}
+
+	const normalizedPhone = normalizeOptionalValue(formState.phone);
+	if ((normalizedPhone ?? null) !== (profile.phone ?? null)) {
+		payload.phone = normalizedPhone ?? null;
+	}
+
+	return payload;
+}
+
+function normalizeOptionalValue(raw: string) {
+	const trimmed = raw.trim();
+	return trimmed.length > 0 ? trimmed : undefined;
 }

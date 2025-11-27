@@ -83,7 +83,7 @@ Content-Type: application/json
 
 {
   "cpf": "12345678901",
-  "pin": "123456"
+  "pin": "1234"
 }
 ```
 **204 No Content** → Cookie `Set-Cookie: patient_session=<token>; HttpOnly; Secure; SameSite=Strict`.

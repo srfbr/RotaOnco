@@ -24,16 +24,13 @@ import {
 	Clock4,
 	Users2,
 } from "lucide-react";
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { Link, createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
+import { useNavigate } from "@tanstack/react-router";
+import { requireActiveProfessional } from "@/lib/route-guards";
 export const Route = createFileRoute("/dashboard")({
 	beforeLoad: async ({ context }) => {
-		const session = await context.authClient.getSession();
-		if (!session.data) {
-			throw redirect({
-				to: "/login",
-			})
-		}
+		await requireActiveProfessional(context);
 	},
 	component: DashboardRoute,
 });
@@ -44,82 +41,73 @@ function DashboardRoute() {
 	const alertsQuery = useDashboardAlerts();
 	const summaryQuery = useDashboardSummary();
 
+	const handleAcknowledgeAlert = async (alertId: number) => {
+		try {
+			await alertsQuery.acknowledgeAlert(alertId);
+			toast.success("Alerta marcado como lido");
+			void summaryQuery.refetch();
+		} catch (error) {
+			const message =
+				error instanceof Error
+					? error.message
+					: "Não foi possível atualizar o alerta";
+			toast.error(message);
+		}
+	};
+
 	return (
 		<AppLayout>
-			<div className="flex h-full flex-col gap-8 overflow-hidden">
-				<header>
-					<h1 className="text-2xl font-bold text-[#3B3D3B] md:text-[34px] md:leading-[42px]">
-						Dashboard
-					</h1>
-				</header>
-
+			<div className="flex flex-col gap-6">
 				<StatsGrid
 					stats={statsQuery.data}
 					isLoading={statsQuery.isLoading}
 					error={statsQuery.error as Error | null | undefined}
 				/>
 
-				<section className="grid flex-1 gap-6 overflow-hidden xl:grid-cols-[minmax(0,1fr)_284px]">
-					<div className="flex min-h-0 flex-1 flex-col gap-6 overflow-hidden">
-						<RecentPatientsCard
-							patients={patientsQuery.data ?? []}
-							isLoading={patientsQuery.isLoading}
-							error={patientsQuery.error as Error | null | undefined}
-						/>
+				<div className="grid gap-6 xl:grid-cols-2">
+					<RecentPatientsCard
+						patients={patientsQuery.data}
+						isLoading={patientsQuery.isLoading}
+						error={patientsQuery.error as Error | null | undefined}
+					/>
+					<AlertsCard
+						alerts={alertsQuery.data}
+						isLoading={alertsQuery.isLoading}
+						error={alertsQuery.error as Error | null | undefined}
+						onAcknowledge={handleAcknowledgeAlert}
+						isAcknowledging={alertsQuery.isAcknowledging}
+					/>
+				</div>
 
-						<AlertsCard
-							alerts={alertsQuery.data ?? []}
-							isLoading={alertsQuery.isLoading}
-							error={alertsQuery.error as Error | null | undefined}
-							onAcknowledge={async (alertId) => {
-								try {
-									await alertsQuery.acknowledgeAlert(alertId);
-									toast.success("Alerta marcado como lido");
-									void summaryQuery.refetch();
-								} catch (error) {
-									const message =
-										error instanceof Error
-											? error.message
-											: "Não foi possível atualizar o alerta";
-									toast.error(message)
-								}
-							}}
-							isAcknowledging={alertsQuery.isAcknowledging}
-						/>
-					</div>
-
-					<div className="flex min-h-0 flex-col gap-6 overflow-hidden">
-						<SummaryCard
-							title="Status global"
-							items={[
-								{
-									label: "Pacientes ativos",
-									value: summaryQuery.data?.activePatients ?? 0,
-								},
-								{
-									label: "Consultas hoje",
-									value: summaryQuery.data?.todayAppointments ?? 0,
-								},
-								{
-									label: "Alertas críticos",
-									value: summaryQuery.data?.criticalAlerts ?? 0,
-									accent: summaryQuery.data?.criticalAlerts ? "text-[#FF3B3B]" : undefined,
-								},
-							]}
-							isLoading={summaryQuery.isLoading}
-						/>
-
-						<AgendaCard
-							count={summaryQuery.data?.todayAppointments ?? 0}
-							isLoading={summaryQuery.isLoading}
-						/>
-
-						<QuickActionsCard />
-					</div>
-				</section>
+				<div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+					<SummaryCard
+						title="Status global"
+						items={[
+							{
+								label: "Pacientes ativos",
+								value: summaryQuery.data?.activePatients ?? 0,
+							},
+							{
+								label: "Consultas hoje",
+								value: summaryQuery.data?.todayAppointments ?? 0,
+							},
+							{
+								label: "Alertas críticos",
+								value: summaryQuery.data?.criticalAlerts ?? 0,
+								accent: summaryQuery.data?.criticalAlerts ? "text-[#FF3B3B]" : undefined,
+							},
+						]}
+						isLoading={summaryQuery.isLoading}
+					/>
+					<AgendaCard
+						count={summaryQuery.data?.todayAppointments ?? 0}
+						isLoading={summaryQuery.isLoading}
+					/>
+					<QuickActionsCard />
+				</div>
 			</div>
 		</AppLayout>
-	)
+	);
 }
 
 type StatsGridProps = {
@@ -331,6 +319,7 @@ function AlertsCard({ alerts, isLoading, error, onAcknowledge, isAcknowledging }
 				)}
 				{alerts?.map((alert) => {
 					const severity = getAlertSeverityInfo(alert);
+					const details = alert.details ?? "Alerta registrado sem detalhes adicionais.";
 					return (
 						<article key={alert.id} className="rounded-xl border border-[#E5E5E5] p-6">
 							<header className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -341,18 +330,36 @@ function AlertsCard({ alerts, isLoading, error, onAcknowledge, isAcknowledging }
 									{severity.label}
 								</span>
 							</header>
-							<p className="mb-4 text-sm text-[#6E726E]">
-								{alert.details ?? "Alerta registrado sem detalhes adicionais."}
-							</p>
-							<Button
-								type="button"
-								variant="outline"
-								className="text-sm text-[#6E726E]"
-								disabled={isAcknowledging}
-								onClick={() => onAcknowledge(alert.id)}
+							<p
+								className="mb-4 text-sm text-[#6E726E]"
+								title={details}
+								style={{
+									display: "-webkit-box",
+									WebkitLineClamp: 3,
+									WebkitBoxOrient: "vertical" as const,
+									overflow: "hidden",
+								}}
 							>
-								Marcar como lido
-							</Button>
+								{details}
+							</p>
+							<div className="flex flex-wrap items-center gap-3">
+								<Button
+									type="button"
+									variant="outline"
+									className="text-sm text-[#6E726E]"
+									disabled={isAcknowledging}
+									onClick={() => onAcknowledge(alert.id)}
+								>
+									Marcar como lido
+								</Button>
+								<Link
+									to="/alerts/$alertId"
+									params={{ alertId: alert.id.toString() }}
+									className="text-sm font-medium text-[#2563EB] transition hover:underline"
+								>
+									Ver detalhes
+								</Link>
+							</div>
 						</article>
 					)
 				})}
@@ -436,23 +443,24 @@ function AgendaCard({ count, isLoading }: AgendaCardProps) {
 }
 
 function QuickActionsCard() {
-	const actions = [
+	const navigate = useNavigate();
+	const actions: Array<{ label: string; icon: LucideIcon; to: string }> = [
 		{
 			label: "Pacientes",
 			icon: Users2,
-			message: "Gestão de pacientes em breve",
+			to: "/patients",
 		},
 		{
 			label: "Consultas",
 			icon: CalendarCheck2,
-			message: "Agenda completa em breve",
+			to: "/consultas",
 		},
 		{
 			label: "Relatórios",
 			icon: AlertCircle,
-			message: "Relatórios avançados em breve",
+			to: "/reports",
 		},
-	]
+	];
 
 	return (
 		<section className="rounded-xl border border-[#E5E5E5] bg-white p-6">
@@ -466,16 +474,16 @@ function QuickActionsCard() {
 						<li key={action.label}>
 							<button
 								type="button"
-								onClick={() => toast.info(action.message)}
+								onClick={() => navigate({ to: action.to })}
 								className="flex w-full items-center gap-3 rounded-md border border-[#E5E5E5] px-3 py-3 text-left text-sm font-medium text-[#6E726E] transition hover:border-[#2563EB]/40 hover:bg-[#F3F6FD]"
 							>
 								<Icon className="h-4 w-4 text-[#AAAAAA]" />
 								<span>{action.label}</span>
 							</button>
 						</li>
-					)
+					);
 				})}
 			</ul>
 		</section>
-	)
+	);
 }

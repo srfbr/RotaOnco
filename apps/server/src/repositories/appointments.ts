@@ -188,4 +188,19 @@ export const appointmentsRepository: AppointmentRepository = {
 		});
 		return existing ?? null;
 	},
+
+	async replaceReminders(appointmentId, reminders) {
+		await db.delete(appointmentReminders).where(eq(appointmentReminders.appointmentId, appointmentId));
+		if (reminders.length === 0) {
+			return;
+		}
+		await db.insert(appointmentReminders).values(
+			reminders.map((reminder) => ({
+				appointmentId,
+				channel: reminder.channel,
+				recipient: reminder.recipient,
+				scheduledFor: reminder.scheduledFor,
+			})),
+		);
+	},
 };

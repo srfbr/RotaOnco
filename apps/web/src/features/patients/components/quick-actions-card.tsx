@@ -1,6 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { FilterIcon, UserPlus2, Download } from "lucide-react";
-import { toast } from "sonner";
+import { FilterIcon, UserPlus2 } from "lucide-react";
 
 type QuickActionsCardProps = {
 	onResetFilters: () => void;
@@ -31,15 +30,6 @@ export function QuickActionsCard({ onResetFilters, onCreatePatient }: QuickActio
 				>
 					<UserPlus2 className="h-4 w-4 text-[#6B7280]" />
 					<span>Novo paciente</span>
-				</Button>
-				<Button
-					type="button"
-					variant="outline"
-					className="flex w-full items-center justify-start gap-3 border-[#E5E5E5] text-sm text-[#3B3D3B]"
-					onClick={() => toast.info("Exportação disponível em breve")}
-				>
-					<Download className="h-4 w-4 text-[#6B7280]" />
-					<span>Exportar</span>
 				</Button>
 			</div>
 		</aside>

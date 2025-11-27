@@ -70,7 +70,7 @@ erDiagram
       varchar audio_material_url
       int pin_attempts DEFAULT 0
       datetime pin_blocked_until
-      varchar pin_hash UK // hash Argon2 de PIN (6 dígitos)
+      varchar pin_hash UK // hash Argon2 de PIN (4 dígitos)
       datetime created_at
       datetime updated_at
     }
@@ -178,7 +178,7 @@ erDiagram
 ```
 
 ## PII e Retenção
-- **Dados sensíveis**: CPF (`patients.cpf`, `users.document_id`), dados clínicos (`patients.tumor_type`, `occurrences.notes`), contatos (`patient_contacts.phone`) e PIN de 6 dígitos (armazenado como hash Argon2 único em `patients.pin_hash`). Requer transporte seguro (HTTPS) e, quando aplicável, encriptação em repouso.
+- **Dados sensíveis**: CPF (`patients.cpf`, `users.document_id`), dados clínicos (`patients.tumor_type`, `occurrences.notes`), contatos (`patient_contacts.phone`) e PIN de 4 dígitos (armazenado como hash Argon2 único em `patients.pin_hash`). Requer transporte seguro (HTTPS) e, quando aplicável, encriptação em repouso.
 - **PIN**: contador de tentativas (`pin_attempts`) e bloqueio temporário (`pin_blocked_until`), com índice único para evitar colisões entre pacientes.
 - **Retenção**: sem política formal adicional; dados mantidos enquanto necessários à operação e pesquisa interna. Ajustável futuramente via `settings`.
 - **Auditoria**: registros permanentes em `audit_logs` até definição de política de retenção.

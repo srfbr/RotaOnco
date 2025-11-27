@@ -238,6 +238,7 @@ async function seed() {
 			and(
 				eq(appointmentReminders.appointmentId, appointment.id),
 				eq(appointmentReminders.channel, "whatsapp"),
+				eq(appointmentReminders.recipient, "patient"),
 			),
 		)
 		.limit(1);
@@ -246,6 +247,7 @@ async function seed() {
 		await db.insert(appointmentReminders).values({
 			appointmentId: appointment.id,
 			channel: "whatsapp",
+			recipient: "patient",
 			scheduledFor: reminderTime,
 		});
 	}

@@ -19,21 +19,27 @@ export const WAIT_TIME_REPORT: WaitTimeReportPoint[] = [
 	{ month: "dez", label: "Dez", value: 10 },
 ];
 
+export type ReportKind = "wait-times" | "adherence" | "attendance" | "alerts";
+
 export const REPORT_ACTION_GROUPS = [
 	{
 		title: "Relatório de tempo",
-		actions: ["Visualizar", "Unidade", "Exportar"],
+		actions: ["Visualizar"],
+		reportKind: "wait-times" as ReportKind,
 	},
 	{
 		title: "Relatório de adesão",
-		actions: ["Visualizar", "Unidade"],
+		actions: ["Visualizar"],
+		reportKind: "adherence" as ReportKind,
 	},
 	{
 		title: "Relatório de presença",
-		actions: ["Visualizar", "Unidade", "Exportar"],
+		actions: ["Visualizar"],
+		reportKind: "attendance" as ReportKind,
 	},
 	{
-		title: "Relatório de efeitos",
-		actions: ["Visualizar", "Unidade"],
+		title: "Relatório de alertas",
+		actions: ["Visualizar"],
+		reportKind: "alerts" as ReportKind,
 	},
 ] as const;

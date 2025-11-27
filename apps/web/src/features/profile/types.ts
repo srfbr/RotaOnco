@@ -7,6 +7,7 @@ export type ProfileViewModel = {
 	documentId: string;
 	specialty?: string | null;
 	phone?: string | null;
+	avatarUrl?: string | null;
 	roles: Professional["roles"];
 	roleLabel: string;
 	isActive?: boolean;
@@ -22,6 +23,7 @@ export function toProfileViewModel(professional: Professional): ProfileViewModel
 		documentId: professional.documentId,
 		specialty: professional.specialty,
 		phone: professional.phone,
+		avatarUrl: professional.avatarUrl,
 		roles: professional.roles,
 		roleLabel: resolveRoleLabel(professional.roles),
 		isActive: professional.isActive,

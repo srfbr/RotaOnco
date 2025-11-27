@@ -1,11 +1,15 @@
-import { FileText, Layers, Share2 } from "lucide-react";
+import { FileText, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { REPORT_ACTION_GROUPS } from "../data";
-import { toast } from "sonner";
+import { REPORT_ACTION_GROUPS, type ReportKind } from "../data";
 
-const ICONS = [FileText, Layers, Share2];
+const ICONS = [FileText, Layers];
 
-export function ReportsActionsPanel() {
+type ReportsActionsPanelProps = {
+	activeReport: ReportKind;
+	onSelectReport: (report: ReportKind) => void;
+};
+
+export function ReportsActionsPanel({ activeReport, onSelectReport }: ReportsActionsPanelProps) {
 	return (
 		<section className="flex flex-col gap-4">
 			{REPORT_ACTION_GROUPS.map((group, index) => {
@@ -21,24 +25,24 @@ export function ReportsActionsPanel() {
 							</div>
 							<div>
 								<h3 className="text-base font-semibold text-[#3B3D3B]">{group.title}</h3>
-								<p className="text-sm text-[#6E726E]">Configure visibilidade e exporte dados consolidados.</p>
+								<p className="text-sm text-[#6E726E]">Selecione qual relatório deseja visualizar agora.</p>
 							</div>
 						</header>
 						<div className="flex flex-wrap gap-2">
-							{group.actions.map((action) => (
+							{group.reportKind ? (
 								<Button
-									key={action}
-									variant={action === "Visualizar" ? "default" : "outline"}
+									type="button"
+									variant={activeReport === group.reportKind ? "default" : "outline"}
 									className={
-										action === "Visualizar"
+										activeReport === group.reportKind
 											? "gap-2 bg-[#3663D8] text-white hover:bg-[#2D52B1]"
 											: "gap-2 border-[#CBD5F5] text-[#3663D8] hover:bg-[#F3F6FD]"
 									}
-									onClick={() => toast.info(`${group.title} - ${action} disponível em breve`)}
+									onClick={() => onSelectReport(group.reportKind)}
 								>
-									{action}
+									{group.actions[0] ?? "Visualizar"}
 								</Button>
-							))}
+							) : null}
 						</div>
 					</article>
 				);

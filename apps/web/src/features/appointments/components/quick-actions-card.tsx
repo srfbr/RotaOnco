@@ -14,8 +14,8 @@ export function AppointmentsQuickActions({ onCreateAppointment }: AppointmentsQu
 			</header>
 			<Button
 				type="button"
-				variant="outline"
-				className="w-full justify-center gap-2 border-dashed border-[#3663D8] text-[#3663D8]"
+				variant="default"
+				className="w-full justify-center gap-2 border border-transparent bg-[#2563EB] text-white hover:bg-[#1D4ED8]"
 				onClick={onCreateAppointment}
 			>
 				<Plus className="h-4 w-4" />

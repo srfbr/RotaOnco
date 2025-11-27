@@ -1,5 +1,5 @@
 import { AppLayout } from "@/components/app-layout";
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import {
 	usePatientsList,
 	usePatientsMetrics,
@@ -14,6 +14,7 @@ import type { StageFilterValue, StatusFilterValue } from "@/features/patients/ut
 import { useEffect, useState } from "react";
 import { PatientDetailsDialog } from "@/features/patients/components/patient-details-dialog";
 import { PatientCreateDialog } from "@/features/patients/components/patient-create-dialog";
+import { requireActiveProfessional } from "@/lib/route-guards";
 
 const PAGE_SIZE = 10;
 const STAGE_VALUES: StageFilterValue[] = ["all", "pre_triage", "in_treatment", "post_treatment"];
@@ -51,10 +52,7 @@ function parseSelectedPatientId(value: unknown): number | null {
 
 export const Route = createFileRoute("/patients")({
 	beforeLoad: async ({ context }) => {
-		const session = await context.authClient.getSession();
-		if (!session.data) {
-			throw redirect({ to: "/login" });
-		}
+		await requireActiveProfessional(context);
 	},
 	validateSearch: (search) => {
 		return {

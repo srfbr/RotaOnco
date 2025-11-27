@@ -22,6 +22,8 @@ type RouterSetup = {
 	reports: {
 		getAttendanceReport: ReturnType<typeof vi.fn>;
 		getWaitTimesReport: ReturnType<typeof vi.fn>;
+		getAdherenceReport: ReturnType<typeof vi.fn>;
+		getAlertsReport: ReturnType<typeof vi.fn>;
 	};
 };
 
@@ -52,6 +54,8 @@ function buildRouter(): RouterSetup {
 	const reports = {
 		getAttendanceReport: vi.fn(),
 		getWaitTimesReport: vi.fn(),
+		getAdherenceReport: vi.fn(),
+		getAlertsReport: vi.fn(),
 	};
 	const occurrences = {
 		listPatientOccurrences: vi.fn(),
@@ -193,6 +197,106 @@ describe("reports routes", () => {
 			averageDaysToTriage: 3.5,
 			averageDaysToTreatment: 5.2,
 			medianQueueTime: 4,
+		});
+	});
+
+	it("returns adherence report", async () => {
+		const { router, reports } = buildRouter();
+		reports.getAdherenceReport.mockResolvedValue({
+			period: { start: "2025-10-01", end: "2025-10-31" },
+			totals: {
+				completedAppointments: 12,
+				symptomReportCount: 8,
+			},
+			patients: {
+				withCompletedAppointments: 9,
+				reportingSymptoms: 6,
+				engaged: 5,
+				engagementRate: 5 / 9,
+			},
+		});
+
+		const response = await router.request(
+			"/reports/adherence?start=2025-10-01&end=2025-10-31",
+			{
+				method: "GET",
+				headers: { Authorization: "Bearer token" },
+			},
+		);
+
+		expect(response.status).toBe(200);
+		expect(reports.getAdherenceReport).toHaveBeenCalledWith(
+			expect.objectContaining({
+				professionalId: 77,
+				start: new Date("2025-10-01T00:00:00.000Z"),
+			}),
+		);
+		expect(await response.json()).toEqual({
+			period: { start: "2025-10-01", end: "2025-10-31" },
+			totals: {
+				completedAppointments: 12,
+				symptomReportCount: 8,
+			},
+			patients: {
+				withCompletedAppointments: 9,
+				reportingSymptoms: 6,
+				engaged: 5,
+				engagementRate: 5 / 9,
+			},
+		});
+	});
+
+	it("returns alerts report", async () => {
+		const { router, reports } = buildRouter();
+		reports.getAlertsReport.mockResolvedValue({
+			period: { start: "2025-10-01", end: "2025-10-31" },
+			totals: {
+				status: { open: 4, acknowledged: 2, closed: 1 },
+				severity: { low: 1, medium: 3, high: 3 },
+			},
+			recent: [
+				{
+					id: 88,
+					patientId: 12,
+					kind: "Sinais vitais alterados",
+					severity: "high",
+					status: "open",
+					createdAt: new Date("2025-10-30T10:00:00.000Z").toISOString(),
+				},
+			],
+		});
+
+		const response = await router.request(
+			"/reports/alerts?start=2025-10-01&end=2025-10-31",
+			{
+				method: "GET",
+				headers: { Authorization: "Bearer token" },
+			},
+		);
+
+		expect(response.status).toBe(200);
+		expect(reports.getAlertsReport).toHaveBeenCalledWith(
+			expect.objectContaining({
+				professionalId: 77,
+				start: new Date("2025-10-01T00:00:00.000Z"),
+			}),
+		);
+		expect(await response.json()).toEqual({
+			period: { start: "2025-10-01", end: "2025-10-31" },
+			totals: {
+				status: { open: 4, acknowledged: 2, closed: 1 },
+				severity: { low: 1, medium: 3, high: 3 },
+			},
+			recent: [
+				{
+					id: 88,
+					patientId: 12,
+					kind: "Sinais vitais alterados",
+					severity: "high",
+					status: "open",
+					createdAt: new Date("2025-10-30T10:00:00.000Z").toISOString(),
+				},
+			],
 		});
 	});
 });

@@ -15,6 +15,36 @@
       "when": 1759964413447,
       "tag": "0001_big_madrox",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1763356800000,
+      "tag": "0002_add_avatar_to_users",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1763443200000,
+      "tag": "0003_expand_avatar_url",
+      "breakpoints": true
+    }
+    ,
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1769356800000,
+      "tag": "0004_add_recipient_to_appointment_reminders",
+      "breakpoints": true
+    }
+    ,
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1769481600000,
+      "tag": "0005_add_must_change_password_to_users",
+      "breakpoints": true
     }
   ]
 }

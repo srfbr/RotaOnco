@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { AppLayout } from "@/components/app-layout";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,9 @@ import { TeamHero } from "@/features/team/components/team-hero";
 import { TeamTable } from "@/features/team/components/team-table";
 import { TeamQuickActions } from "@/features/team/components/team-quick-actions";
 import { TeamSummaryCard } from "@/features/team/components/team-summary-card";
-import { useTeamDirectory } from "@/features/team/hooks";
+import { useDeleteProfessional, useTeamDirectory } from "@/features/team/hooks";
+import { requireActiveProfessional } from "@/lib/route-guards";
+import { toast } from "sonner";
 
 type TeamStatusFilter = "all" | TeamMemberStatus;
 
@@ -40,10 +42,7 @@ function parseQuery(value: unknown): string {
 
 export const Route = createFileRoute("/team")({
 	beforeLoad: async ({ context }) => {
-		const session = await context.authClient.getSession();
-		if (!session.data) {
-			throw redirect({ to: "/login" });
-		}
+		await requireActiveProfessional(context);
 	},
 	validateSearch: (search): TeamSearch => ({
 		status: parseStatus(search.status),
@@ -63,6 +62,7 @@ function TeamRoute() {
 		limit: TEAM_PAGE_SIZE,
 		offset: 0,
 	});
+	const deleteProfessional = useDeleteProfessional();
 
 	const directory = teamQuery.data ?? null;
 	const members = directory?.members ?? [];
@@ -73,6 +73,8 @@ function TeamRoute() {
 	const errorMessage = teamQuery.isError
 		? ((teamQuery.error instanceof Error ? teamQuery.error.message : null) ?? "Não foi possível carregar a equipe.")
 		: null;
+
+	const pendingMemberId = deleteProfessional.isPending ? deleteProfessional.variables ?? null : null;
 
 	const handleStatusChange = (next: TeamStatusFilter) => {
 		navigate({
@@ -147,7 +149,32 @@ function TeamRoute() {
 							</div>
 						) : (
 							<>
-								<TeamTable members={members} isLoading={isLoading} />
+								<TeamTable
+									members={members}
+									isLoading={isLoading}
+									onDelete={async (member) => {
+										if (deleteProfessional.isPending) {
+											return;
+										}
+										const confirmed = window.confirm(
+											`Tem certeza que deseja excluir ${member.fullName}? Essa ação não pode ser desfeita.`,
+										);
+										if (!confirmed) {
+											return;
+										}
+										try {
+											await deleteProfessional.mutateAsync(member.id);
+											toast.success("Profissional removido com sucesso.");
+										} catch (error) {
+											const message =
+												error instanceof Error
+													? error.message
+													: "Não foi possível excluir o profissional.";
+											toast.error(message);
+										}
+									}}
+									busyMemberId={pendingMemberId}
+								/>
 								<footer className="border-t border-[#E5E5E5] px-8 py-4 text-sm text-[#6E726E]">
 									Exibindo {members.length} de {totalMembers} profissionais cadastrados.
 								</footer>

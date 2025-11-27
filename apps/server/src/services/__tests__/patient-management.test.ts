@@ -30,6 +30,7 @@ describe("createPatientManagementService", () => {
 			createPatient: vi.fn().mockResolvedValue(basePatient),
 			searchPatients: vi.fn().mockResolvedValue([]),
 			getPatientDetail: vi.fn().mockResolvedValue(null),
+			updatePatient: vi.fn().mockResolvedValue(basePatient),
 		};
 		audit = {
 			record: vi.fn(),
@@ -45,11 +46,11 @@ describe("createPatientManagementService", () => {
 		const service = createPatientManagementService({ repository, audit });
 
 		const patient = await service.createPatient(
-			{ fullName: basePatient.fullName, cpf: basePatient.cpf, pin: "123456" },
+			{ fullName: basePatient.fullName, cpf: basePatient.cpf, pin: "1234" },
 			{ professionalId: 42 },
 		);
 
-		expect(hashSpy).toHaveBeenCalledWith("123456", { algorithm: "argon2id" });
+		expect(hashSpy).toHaveBeenCalledWith("1234", { algorithm: "argon2id" });
 		expect(repository.createPatient).toHaveBeenCalledWith(
 			expect.objectContaining({ pinHash: "hashed" }),
 		);
@@ -69,7 +70,7 @@ describe("createPatientManagementService", () => {
 
 		await expect(
 			service.createPatient(
-				{ fullName: basePatient.fullName, cpf: basePatient.cpf, pin: "123456" },
+				{ fullName: basePatient.fullName, cpf: basePatient.cpf, pin: "1234" },
 				{ professionalId: 42 },
 			),
 		).rejects.toThrowError("PATIENT_DUPLICATE");

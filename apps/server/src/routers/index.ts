@@ -7,6 +7,7 @@ import type { StatusCode } from "hono/utils/http-status";
 import type { AppEnv } from "../types/context";
 import { requirePatient } from "../middlewares/require-patient";
 import { requireProfessional } from "../middlewares/require-professional";
+import { requireAdmin } from "../middlewares/require-admin";
 import type { PatientAuthService } from "../services/patient-auth";
 import type { PatientService } from "../services/patients";
 import type {
@@ -21,8 +22,12 @@ import type { AppointmentService, AppointmentUpdateInput } from "../services/app
 import type { AlertService } from "../services/alerts";
 import type { ReportsService } from "../services/reports";
 import type { OccurrenceService } from "../services/occurrences";
+import {
+	ProfessionalDeleteError,
+	ProfessionalOnboardingError,
+	ProfessionalProfileUpdateError,
+} from "../services/professionals";
 import type { ProfessionalDirectoryService, ProfessionalOnboardingService } from "../services/professionals";
-import { ProfessionalOnboardingError } from "../services/professionals";
 import type { MiddlewareHandler } from "hono";
 import { auth } from "../lib/auth";
 
@@ -120,6 +125,16 @@ const patientListQuerySchema = z.object({
 	offset: z.coerce.number().int().min(0).optional(),
 });
 
+const patientAppointmentsQuerySchema = z.object({
+	limit: z.coerce.number().int().min(1).max(50).optional(),
+});
+
+const patientOccurrenceCreateSchema = z.object({
+	kind: z.string().trim().min(1),
+	intensity: z.coerce.number().int().min(0).max(10),
+	notes: z.string().trim().min(1).optional(),
+});
+
 function parseDayRange(day: string) {
 	const start = new Date(`${day}T00:00:00.000Z`);
 	if (Number.isNaN(start.getTime())) {
@@ -158,7 +173,7 @@ const patientCreateSchema = z.object({
 	pin: z
 		.string()
 		.trim()
-		.regex(/^\d{6}$/),
+		.regex(/^\d{4,6}$/),
 	birthDate: z.string().trim().min(1).optional(),
 	phone: z.string().trim().optional(),
 	emergencyPhone: z.string().trim().optional(),
@@ -238,6 +253,55 @@ const professionalListQuerySchema = z.object({
 	offset: z.coerce.number().int().min(0).optional(),
 });
 
+const professionalIdParamSchema = z.object({
+	id: z.coerce.number().int().positive(),
+});
+
+const professionalProfileUpdateSchema = z
+	.object({
+		name: z
+			.string()
+			.trim()
+			.min(3, "Informe seu nome completo")
+			.max(120, "Nome deve conter no máximo 120 caracteres")
+			.optional(),
+		specialty: z
+			.union([
+				z
+					.string()
+					.trim()
+					.max(120, "Especialidade deve conter no máximo 120 caracteres"),
+				z.null(),
+			])
+			.optional(),
+		phone: z
+			.union([
+				z
+					.string()
+					.trim()
+					.max(20, "Telefone deve conter no máximo 20 caracteres"),
+				z.null(),
+			])
+			.optional(),
+		avatarDataUrl: z
+			.union([
+				z
+					.string()
+					.trim()
+					.max(2_000_000, "Imagem deve ter no máximo 2MB"),
+				z.null(),
+			])
+			.optional(),
+	})
+	.superRefine((value, ctx) => {
+		if (!Object.values(value).some((field) => field !== undefined)) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				message: "Informe ao menos um campo para atualizar.",
+			});
+		}
+	});
+
 function validationError(details: unknown) {
 	return {
 		code: "VALIDATION_ERROR",
@@ -291,6 +355,47 @@ function normalizeNullableString(value?: string | null) {
 function formatDateOnly(value: Date | null | undefined) {
 	if (!value) return null;
 	return value.toISOString().split("T")[0] ?? null;
+}
+
+function toIsoStringValue(value?: Date | string | null) {
+	if (!value) {
+		return null;
+	}
+	if (value instanceof Date) {
+		return value.toISOString();
+	}
+	const parsed = new Date(value);
+	return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+function serializeProfessionalProfile(profile: {
+	id: number;
+	name?: string | null;
+	email?: string | null;
+	documentId?: string | null;
+	specialty?: string | null;
+	phone?: string | null;
+	avatarUrl?: string | null;
+	isActive?: boolean | null;
+	mustChangePassword?: boolean | null;
+	roles: string[];
+	createdAt?: Date | string | null;
+	updatedAt?: Date | string | null;
+}) {
+	return {
+		id: profile.id,
+		name: profile.name ?? "",
+		email: profile.email ?? "",
+		documentId: profile.documentId ?? "",
+		specialty: profile.specialty ?? null,
+		phone: profile.phone ?? null,
+		avatarUrl: profile.avatarUrl ?? null,
+		isActive: profile.isActive ?? true,
+		mustChangePassword: profile.mustChangePassword ?? false,
+		roles: profile.roles,
+		createdAt: toIsoStringValue(profile.createdAt),
+		updatedAt: toIsoStringValue(profile.updatedAt),
+	};
 }
 
 function serializePatientEntity(patient: PatientEntity) {
@@ -413,6 +518,40 @@ function mapPatientCreateError(error: unknown):
 		};
 	}
 	return null;
+}
+
+function mapProfessionalDeleteError(error: unknown): { status: StatusCode; body: unknown } | null {
+	if (!(error instanceof ProfessionalDeleteError)) {
+		return null;
+	}
+
+	switch (error.code) {
+		case "NOT_FOUND":
+			return {
+				status: 404 as StatusCode,
+				body: {
+					code: "PROFESSIONAL_NOT_FOUND",
+					message: "Profissional não encontrado.",
+				},
+			};
+		case "HAS_DEPENDENCIES":
+			return {
+				status: 409 as StatusCode,
+				body: {
+					code: "PROFESSIONAL_IN_USE",
+					message:
+						"Não é possível excluir o profissional porque existem registros vinculados (agendamentos ou ocorrências).",
+				},
+			};
+		default:
+			return {
+				status: 500 as StatusCode,
+				body: {
+					code: "PROFESSIONAL_DELETE_FAILED",
+					message: "Não foi possível remover o profissional. Tente novamente mais tarde.",
+				},
+			};
+	}
 }
 
 function notFound(message: string) {
@@ -559,6 +698,26 @@ export function createAppRouter(deps: AppRouterDeps) {
 		});
 	});
 
+		router.delete("/professionals/:id", requireAdmin, async (c) => {
+			const parsed = professionalIdParamSchema.safeParse(c.req.param());
+			if (!parsed.success) {
+				return c.json(validationError(parsed.error.flatten()), 400);
+			}
+
+			try {
+				await professionals.deleteProfessional(parsed.data.id);
+			} catch (error) {
+				const mapped = mapProfessionalDeleteError(error);
+				if (mapped) {
+					c.status(mapped.status);
+					return c.json(mapped.body);
+				}
+				throw error;
+			}
+
+			return c.body(null, 204);
+		});
+
 	router.post("/professionals/onboarding", async (c) => {
 		const session = await auth.api.getSession({
 			headers: c.req.raw.headers,
@@ -642,18 +801,128 @@ export function createAppRouter(deps: AppRouterDeps) {
 			if (!professional) {
 				throw new HTTPException(401, { message: "UNAUTHENTICATED" });
 			}
-			return c.json({
-				id: professional.id,
-				name: professional.name ?? "",
-				email: professional.email ?? "",
-				documentId: professional.documentId ?? "",
-				specialty: professional.specialty ?? null,
-				phone: professional.phone ?? null,
-				isActive: professional.isActive ?? true,
-				roles: professional.roles,
-				createdAt: professional.createdAt?.toISOString() ?? null,
-				updatedAt: professional.updatedAt?.toISOString() ?? null,
-			});
+			return c.json(
+				serializeProfessionalProfile({
+					id: professional.id,
+					name: professional.name ?? "",
+					email: professional.email ?? "",
+					documentId: professional.documentId ?? "",
+					specialty: professional.specialty ?? null,
+					phone: professional.phone ?? null,
+					avatarUrl: professional.avatarUrl ?? null,
+					isActive: professional.isActive ?? true,
+					mustChangePassword: professional.mustChangePassword ?? false,
+					roles: professional.roles,
+					createdAt: professional.createdAt ?? null,
+					updatedAt: professional.updatedAt ?? null,
+				}),
+			);
+		});
+
+		router.patch("/professionals/me", requireProfessional, async (c) => {
+			const professional = c.get("professional");
+			if (!professional) {
+				throw new HTTPException(401, { message: "UNAUTHENTICATED" });
+			}
+
+			let body: unknown;
+			try {
+				body = await c.req.json();
+			} catch (error) {
+				return c.json(validationError("JSON inválido"), 400);
+			}
+
+			const parsed = professionalProfileUpdateSchema.safeParse(body);
+			if (!parsed.success) {
+				return c.json(validationError(parsed.error.flatten()), 400);
+			}
+
+			const updateInput: {
+				userId: number;
+				name?: string;
+				specialty?: string | null;
+				phone?: string | null;
+				avatarDataUrl?: string | null;
+			} = {
+				userId: professional.id,
+			};
+
+			if (parsed.data.name !== undefined) {
+				const normalized = parsed.data.name.trim();
+				if (normalized.length === 0) {
+					return c.json(validationError({ name: "Nome não pode ficar em branco." }), 400);
+				}
+				updateInput.name = normalized;
+			}
+
+			if (parsed.data.specialty !== undefined) {
+				if (parsed.data.specialty === null) {
+					updateInput.specialty = null;
+				} else {
+					const normalized = parsed.data.specialty.trim();
+					updateInput.specialty = normalized.length > 0 ? normalized : null;
+				}
+			}
+
+			if (parsed.data.phone !== undefined) {
+				if (parsed.data.phone === null) {
+					updateInput.phone = null;
+				} else {
+					const normalized = parsed.data.phone.trim();
+					updateInput.phone = normalized.length > 0 ? normalized : null;
+				}
+			}
+
+			if (parsed.data.avatarDataUrl !== undefined) {
+				if (parsed.data.avatarDataUrl === null) {
+					updateInput.avatarDataUrl = null;
+				} else {
+					const normalized = parsed.data.avatarDataUrl.trim();
+					updateInput.avatarDataUrl = normalized.length > 0 ? normalized : null;
+				}
+			}
+
+			try {
+				const updated = await professionals.updateProfile(updateInput);
+				const responseBody = serializeProfessionalProfile({
+					id: updated.id,
+					name: updated.name,
+					email: updated.email,
+					documentId: updated.documentId,
+					specialty: updated.specialty,
+					phone: updated.phone,
+					avatarUrl: updated.avatarUrl,
+					isActive: updated.isActive,
+					mustChangePassword: updated.mustChangePassword,
+					roles: updated.roles,
+					createdAt: updated.createdAt,
+					updatedAt: updated.updatedAt,
+				});
+
+				c.set("professional", {
+					...professional,
+					name: updated.name,
+					specialty: updated.specialty ?? null,
+					phone: updated.phone ?? null,
+					avatarUrl: updated.avatarUrl ?? null,
+					isActive: updated.isActive,
+					mustChangePassword: updated.mustChangePassword,
+					createdAt: updated.createdAt ? new Date(updated.createdAt) : professional.createdAt,
+					updatedAt: updated.updatedAt ? new Date(updated.updatedAt) : professional.updatedAt,
+				});
+
+				return c.json(responseBody);
+			} catch (error) {
+				if (error instanceof ProfessionalProfileUpdateError) {
+					if (error.code === "INVALID_AVATAR") {
+						return c.json(validationError({ avatarDataUrl: "Imagem inválida. Envie uma foto PNG, JPG ou WEBP de até 2MB." }), 400);
+					}
+					if (error.code === "NOT_FOUND") {
+						return c.json(notFound("Profissional não encontrado"), 404);
+					}
+				}
+				throw error;
+			}
 		});
 
 	router.get("/patients/me", requirePatient, async (c) => {
@@ -664,6 +933,70 @@ export function createAppRouter(deps: AppRouterDeps) {
 		const view = await patients.getMobileView(patientSession.id);
 		return c.json(view);
 	});
+
+		router.get("/patients/me/appointments", requirePatient, async (c) => {
+			const parsed = patientAppointmentsQuerySchema.safeParse(c.req.query());
+			if (!parsed.success) {
+				return c.json(validationError(parsed.error.flatten()), 400);
+			}
+			const patientSession = c.get("patient");
+			if (!patientSession) {
+				throw new HTTPException(401, { message: "UNAUTHENTICATED" });
+			}
+			const appointmentsList = await patients.listUpcomingAppointments(
+				patientSession.id,
+				parsed.data.limit,
+			);
+			return c.json({ data: appointmentsList });
+		});
+
+		router.post("/patients/me/occurrences", requirePatient, async (c) => {
+			let body: unknown;
+			try {
+				body = await c.req.json();
+			} catch (error) {
+				return c.json(validationError("JSON inválido"), 400);
+			}
+			const parsed = patientOccurrenceCreateSchema.safeParse(body);
+			if (!parsed.success) {
+				return c.json(validationError(parsed.error.flatten()), 400);
+			}
+			const patientSession = c.get("patient");
+			if (!patientSession) {
+				throw new HTTPException(401, { message: "UNAUTHENTICATED" });
+			}
+			const [nextAppointment] = await patients.listUpcomingAppointments(patientSession.id, 1);
+			let professionalId = nextAppointment?.professional?.id ?? nextAppointment?.professionalId;
+			if (!professionalId) {
+				const fallbackRaw = process.env.PATIENT_OCCURRENCE_FALLBACK_PROFESSIONAL_ID;
+				if (fallbackRaw) {
+					const parsedId = Number(fallbackRaw);
+					if (Number.isInteger(parsedId) && parsedId > 0) {
+						professionalId = parsedId;
+					}
+				}
+			}
+			if (!professionalId) {
+				return c.json(
+					{
+						code: "PROFESSIONAL_NOT_FOUND",
+						message: "Não foi possível identificar um profissional responsável para este paciente.",
+					},
+					409,
+				);
+			}
+			const occurrence = await occurrences.createOccurrence(
+				patientSession.id,
+				{
+					kind: parsed.data.kind,
+					intensity: parsed.data.intensity,
+					source: "patient",
+					notes: normalizeNullableString(parsed.data.notes),
+				},
+				{ professionalId },
+			);
+			return c.json(occurrence, 201);
+		});
 
 	router.get("/patients/search", requireProfessional, async (c) => {
 		const parsed = patientSearchSchema.safeParse(c.req.query());
@@ -1174,6 +1507,29 @@ export function createAppRouter(deps: AppRouterDeps) {
 			);
 		}
 		const report = await reports.getAttendanceReport({
+			professionalId: professional.id,
+			start: range.start,
+			end: range.end,
+		});
+		return c.json(report);
+	});
+	reportsRouter.get("/adherence", async (c) => {
+		const professional = c.get("professional");
+		if (!professional) {
+			throw new HTTPException(401, { message: "UNAUTHENTICATED" });
+		}
+		const parsed = reportRangeQuerySchema.safeParse(c.req.query());
+		if (!parsed.success) {
+			return c.json(validationError(parsed.error.flatten()), 400);
+		}
+		const range = parseDateRange(parsed.data.start, parsed.data.end);
+		if (!range) {
+			return c.json(
+				validationError({ range: "Intervalo de datas inválido" }),
+				400,
+			);
+		}
+		const report = await reports.getAdherenceReport({
 			professionalId: professional.id,
 			start: range.start,
 			end: range.end,

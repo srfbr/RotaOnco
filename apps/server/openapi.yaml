@@ -6,7 +6,7 @@ info:
     API unificada do RotaOnco para Web (profissionais/administradores) e Mobile (pacientes).
     
     - Autenticação profissional/admin via Better Auth (Bearer JWT).
-    - Sessões de paciente via cookie HttpOnly `patient_session` emitido após validação de PIN de 6 dígitos.
+    - Sessões de paciente via cookie HttpOnly `patient_session` emitido após validação de PIN de 4 dígitos.
     - RBAC com papéis `admin`, `professional` e `patient`. Operações listam papéis permitidos em `x-roles`.
     - Todos os endpoints retornam erros no formato padronizado `ErrorResponse`.
 servers:
@@ -90,7 +90,7 @@ paths:
   /auth/patient-pin:
     post:
       tags: [Auth]
-      summary: Inicia sessão de paciente via PIN de 6 dígitos.
+      summary: Inicia sessão de paciente via PIN de 4 dígitos.
       description: Valida PIN e retorna cookie `patient_session` HttpOnly.
       operationId: loginPatient
       security: []
@@ -109,8 +109,8 @@ paths:
                   description: CPF do paciente.
                 pin:
                   type: string
-                  pattern: '^\d{6}$'
-                  description: PIN de 6 dígitos.
+                  pattern: '^\d{4}$'
+                  description: PIN de 4 dígitos.
       responses:
         '204':
           description: Sessão iniciada; cookie `patient_session` configurado.
@@ -257,6 +257,62 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         default:
           $ref: '#/components/responses/Error'
+    patch:
+      tags: [Professionals]
+      summary: Atualiza dados do próprio perfil profissional.
+      operationId: updateMyProfessionalProfile
+      x-roles: [professional, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfessionalProfileUpdateInput'
+      responses:
+        '200':
+          description: Perfil atualizado com sucesso.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/Error'
+  /professionals/me/password:
+    patch:
+      tags: [Professionals]
+      summary: Atualiza a senha do profissional autenticado.
+      description: Permite que profissionais alterem a senha inicial padrão após o primeiro acesso.
+      operationId: updateMyProfessionalPassword
+      x-roles: [professional, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [newPassword, confirmPassword]
+              properties:
+                newPassword:
+                  type: string
+                  format: password
+                  minLength: 8
+                confirmPassword:
+                  type: string
+                  format: password
+                  minLength: 8
+      responses:
+        '204':
+          description: Senha atualizada com sucesso.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/Error'
   /professionals/onboarding:
     post:
       tags: [Professionals]
@@ -328,6 +384,22 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '404':
           $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Professionals]
+      summary: Remove profissional.
+      operationId: deleteProfessional
+      x-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '204':
+          description: Profissional removido.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         default:
           $ref: '#/components/responses/Error'
   /patients:
@@ -929,6 +1001,24 @@ paths:
                 $ref: '#/components/schemas/AdherenceReport'
         default:
           $ref: '#/components/responses/Error'
+  /reports/alerts:
+    get:
+      tags: [Reports]
+      summary: Indicadores de alertas clínicos.
+      operationId: getAlertsReport
+      x-roles: [professional, admin]
+      parameters:
+        - $ref: '#/components/parameters/ReportRangeStart'
+        - $ref: '#/components/parameters/ReportRangeEnd'
+      responses:
+        '200':
+          description: Métricas consolidadas de alertas.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertsReport'
+        default:
+          $ref: '#/components/responses/Error'
   /reports/adverse-effects:
     get:
       tags: [Reports]
@@ -1212,7 +1302,12 @@ components:
           type: string
         phone:
           type: string
+        avatarUrl:
+          type: string
+          nullable: true
         isActive:
+          type: boolean
+        mustChangePassword:
           type: boolean
         roles:
           type: array
@@ -1280,6 +1375,23 @@ components:
           items:
             type: string
             enum: [admin, professional]
+    ProfessionalProfileUpdateInput:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 3
+        specialty:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        avatarDataUrl:
+          type: string
+          nullable: true
     PatientStage:
       type: string
       enum: [pre_triage, in_treatment, post_treatment]
@@ -1410,8 +1522,8 @@ components:
           nullable: true
         pin:
           type: string
-          pattern: '^\d{6}$'
-          description: PIN de 6 dígitos, será armazenado como hash Argon2.
+          pattern: '^\d{4}$'
+          description: PIN de 4 dígitos, será armazenado como hash Argon2.
         contacts:
           type: array
           items:
@@ -1773,15 +1885,87 @@ components:
     AdherenceReport:
       type: object
       properties:
-        adherenceRate:
-          type: number
-          format: float
-        abandonmentRisk:
-          type: number
-          format: float
-        consecutiveAbsences:
-          type: integer
-          description: Número de pacientes com duas ou mais faltas consecutivas.
+        period:
+          type: object
+          properties:
+            start:
+              type: string
+              format: date
+            end:
+              type: string
+              format: date
+        totals:
+          type: object
+          properties:
+            completedAppointments:
+              type: integer
+            symptomReportCount:
+              type: integer
+        patients:
+          type: object
+          properties:
+            withCompletedAppointments:
+              type: integer
+            reportingSymptoms:
+              type: integer
+            engaged:
+              type: integer
+            engagementRate:
+              type: number
+              format: float
+    AlertsReport:
+      type: object
+      properties:
+        period:
+          type: object
+          properties:
+            start:
+              type: string
+              format: date
+            end:
+              type: string
+              format: date
+        totals:
+          type: object
+          properties:
+            status:
+              type: object
+              properties:
+                open:
+                  type: integer
+                acknowledged:
+                  type: integer
+                closed:
+                  type: integer
+            severity:
+              type: object
+              properties:
+                low:
+                  type: integer
+                medium:
+                  type: integer
+                high:
+                  type: integer
+        recent:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              patientId:
+                type: integer
+              kind:
+                type: string
+              severity:
+                type: string
+                enum: [low, medium, high]
+              status:
+                type: string
+                enum: [open, acknowledged, closed]
+              createdAt:
+                type: string
+                format: date-time
     AdverseEffectsReport:
       type: object
       properties:

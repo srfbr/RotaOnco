@@ -1,14 +1,27 @@
 import { Button } from "@/components/ui/button";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Ellipsis } from "lucide-react";
-import { toast } from "sonner";
 import type { TeamMember } from "../data";
 import { formatDate, formatRoles, getStatusBadge } from "../utils";
 
 const HEADER_CLASS = "px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-[#6B7280]";
 const CELL_CLASS = "px-6 py-4 text-sm text-[#4B5563]";
 
-export function TeamTable({ members, isLoading }: { members: TeamMember[]; isLoading?: boolean }) {
+type TeamTableProps = {
+	members: TeamMember[];
+	isLoading?: boolean;
+	onDelete?: (member: TeamMember) => void;
+	onToggleStatus?: (member: TeamMember) => void;
+	busyMemberId?: number | null;
+};
+
+export function TeamTable({ members, isLoading, onDelete, onToggleStatus, busyMemberId }: TeamTableProps) {
 	if (isLoading) {
 		return <TableSkeleton />;
 	}
@@ -42,6 +55,8 @@ export function TeamTable({ members, isLoading }: { members: TeamMember[]; isLoa
 				<tbody className="divide-y divide-[#E5E5E5]">
 					{members.map((member) => {
 						const statusBadge = getStatusBadge(member.status);
+						const isInactive = member.status === "inactive";
+						const isBusy = busyMemberId === member.id;
 						return (
 							<tr key={member.id} className="hover:bg-[#F3F6FD]/60">
 								<td className={CELL_CLASS}>
@@ -62,14 +77,33 @@ export function TeamTable({ members, isLoading }: { members: TeamMember[]; isLoa
 								<td className={CELL_CLASS}>{formatRoles(member.roles)}</td>
 								<td className={CELL_CLASS}>{formatDate(member.updatedAt)}</td>
 								<td className="px-6 py-4 text-right">
-									<Button
-										variant="ghost"
-										size="icon"
-										onClick={() => toast.info("Gestão de equipe disponível em breve")}
-										className="text-[#6B7280] hover:text-[#3663D8]"
-									>
-										<Ellipsis className="h-4 w-4" />
-									</Button>
+									<DropdownMenu>
+										<DropdownMenuTrigger asChild>
+											<Button
+												variant="ghost"
+												size="icon"
+												disabled={isBusy}
+												className="text-[#6B7280] hover:text-[#3663D8]"
+											>
+												<Ellipsis className="h-4 w-4" />
+											</Button>
+										</DropdownMenuTrigger>
+										<DropdownMenuContent align="end" className="w-40">
+											<DropdownMenuItem
+												disabled={isBusy}
+												onSelect={() => onToggleStatus?.(member)}
+											>
+												{isInactive ? "Ativar" : "Desativar"}
+											</DropdownMenuItem>
+											<DropdownMenuItem
+												variant="destructive"
+												disabled={isBusy}
+												onSelect={() => onDelete?.(member)}
+											>
+												Excluir
+											</DropdownMenuItem>
+										</DropdownMenuContent>
+									</DropdownMenu>
 								</td>
 							</tr>
 						);

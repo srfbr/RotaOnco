@@ -8,6 +8,8 @@ export type AttendanceReportInput = {
 
 export type WaitTimesReportInput = AttendanceReportInput;
 
+export type AlertsReportInput = AttendanceReportInput;
+
 export type AttendanceReport = {
 	period: {
 		start: string;
@@ -30,13 +32,71 @@ export type WaitTimesReport = {
 
 export type ReportsAppointmentRow = Pick<
 	AppointmentEntity,
-	"status" | "startsAt" | "createdAt" | "type"
+	"status" | "startsAt" | "createdAt" | "type" | "patientId"
 >;
+
+export type ReportsOccurrenceRow = {
+	patientId: number;
+	source: "patient" | "professional";
+	createdAt: Date;
+};
+
+type AlertSeverity = "low" | "medium" | "high";
+type AlertStatus = "open" | "acknowledged" | "closed";
+
+export type ReportsAlertRow = {
+	id: number;
+	patientId: number;
+	kind: string;
+	severity: AlertSeverity;
+	status: AlertStatus;
+	createdAt: Date;
+};
+
+export type AlertsReport = {
+	period: {
+		start: string;
+		end: string;
+	};
+	totals: {
+		status: Record<AlertStatus, number>;
+		severity: Record<AlertSeverity, number>;
+	};
+	recent: Array<{
+		id: number;
+		patientId: number;
+		kind: string;
+		severity: AlertSeverity;
+		status: AlertStatus;
+		createdAt: string;
+	}>;
+};
+
+export type AdherenceReport = {
+	period: {
+		start: string;
+		end: string;
+	};
+	totals: {
+		completedAppointments: number;
+		symptomReportCount: number;
+	};
+	patients: {
+		withCompletedAppointments: number;
+		reportingSymptoms: number;
+		engaged: number;
+		engagementRate: number;
+	};
+};
 
 export interface ReportsRepository {
 	fetchAppointments(
 		params: AttendanceReportInput,
 	): Promise<ReportsAppointmentRow[]>;
+	fetchOccurrences(
+		params: AttendanceReportInput,
+	): Promise<ReportsOccurrenceRow[]>;
+	fetchAlerts(params: AlertsReportInput): Promise<ReportsAlertRow[]>;
 }
 
 function formatDate(date: Date) {
@@ -136,6 +196,95 @@ export function createReportsService(repo: ReportsRepository) {
 				averageDaysToTriage: average(triageLeadTimes),
 				averageDaysToTreatment: average(treatmentLeadTimes),
 				medianQueueTime: median(allLeadTimes),
+			};
+		},
+
+		async getAdherenceReport(params: AttendanceReportInput): Promise<AdherenceReport> {
+			const [appointmentsRows, occurrenceRows] = await Promise.all([
+				repo.fetchAppointments(params),
+				repo.fetchOccurrences(params),
+			]);
+
+			const completedAppointments = appointmentsRows.filter((row) => row.status === "completed");
+			const completedPatientIds = new Set(completedAppointments.map((row) => row.patientId));
+			const totalCompletedAppointments = completedAppointments.length;
+
+			const patientOccurrences = occurrenceRows.filter((row) => row.source === "patient");
+			const symptomPatientIds = new Set(patientOccurrences.map((row) => row.patientId));
+			const totalSymptomReports = patientOccurrences.length;
+
+			let engagedPatients = 0;
+			for (const patientId of symptomPatientIds) {
+				if (completedPatientIds.has(patientId)) {
+					engagedPatients += 1;
+				}
+			}
+
+			const withCompletedAppointments = completedPatientIds.size;
+			const reportingSymptoms = symptomPatientIds.size;
+			const engagementRate = withCompletedAppointments > 0
+				? engagedPatients / withCompletedAppointments
+				: 0;
+
+			return {
+				period: {
+					start: formatDate(params.start),
+					end: formatDate(params.end),
+				},
+				totals: {
+					completedAppointments: totalCompletedAppointments,
+					symptomReportCount: totalSymptomReports,
+				},
+				patients: {
+					withCompletedAppointments,
+					reportingSymptoms,
+					engaged: engagedPatients,
+					engagementRate,
+				},
+			};
+		},
+
+		async getAlertsReport(params: AlertsReportInput): Promise<AlertsReport> {
+			const alertRows = await repo.fetchAlerts(params);
+
+			const statusTotals: Record<AlertStatus, number> = {
+				open: 0,
+				acknowledged: 0,
+				closed: 0,
+			};
+			const severityTotals: Record<AlertSeverity, number> = {
+				low: 0,
+				medium: 0,
+				high: 0,
+			};
+
+			for (const alert of alertRows) {
+				statusTotals[alert.status] += 1;
+				severityTotals[alert.severity] += 1;
+			}
+
+			const recent = [...alertRows]
+				.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+				.slice(0, 5)
+				.map((row) => ({
+					id: row.id,
+					patientId: row.patientId,
+					kind: row.kind,
+					severity: row.severity,
+					status: row.status,
+					createdAt: row.createdAt.toISOString(),
+				}));
+
+			return {
+				period: {
+					start: formatDate(params.start),
+					end: formatDate(params.end),
+				},
+				totals: {
+					status: statusTotals,
+					severity: severityTotals,
+				},
+				recent,
 			};
 		},
 	};

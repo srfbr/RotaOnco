@@ -30,6 +30,8 @@ function buildRouter(): RouterSetup {
 	const reports = {
 		getAttendanceReport: vi.fn(),
 		getWaitTimesReport: vi.fn(),
+		getAdherenceReport: vi.fn(),
+		getAlertsReport: vi.fn(),
 	} as unknown as ReportsService;
 	const patientManagement = {
 		listPatients: vi.fn(),
@@ -73,12 +75,12 @@ describe("auth routes", () => {
 		const response = await router.request("/auth/patient-pin", {
 			method: "POST",
 			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ cpf: "12345678901", pin: "123456" }),
+			body: JSON.stringify({ cpf: "12345678901", pin: "1234" }),
 		});
 
 		expect(response.status).toBe(204);
 		expect(loginWithPin).toHaveBeenCalledWith(
-			expect.objectContaining({ cpf: "12345678901", pin: "123456" }),
+			expect.objectContaining({ cpf: "12345678901", pin: "1234" }),
 		);
 		expect(response.headers.get("set-cookie")).toContain("patient_session=");
 	});
@@ -90,7 +92,7 @@ describe("auth routes", () => {
 		const response = await router.request("/auth/patient-pin", {
 			method: "POST",
 			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ cpf: "12345678901", pin: "123456" }),
+			body: JSON.stringify({ cpf: "12345678901", pin: "1234" }),
 		});
 
 		expect(response.status).toBe(423);
@@ -108,7 +110,7 @@ describe("auth routes", () => {
 		const response = await router.request("/auth/patient-pin", {
 			method: "POST",
 			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ cpf: "12345678901", pin: "123456" }),
+			body: JSON.stringify({ cpf: "12345678901", pin: "1234" }),
 		});
 
 		expect(response.status).toBe(401);

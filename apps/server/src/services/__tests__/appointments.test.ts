@@ -31,6 +31,7 @@ describe("createAppointmentService", () => {
 			updateStatus: vi.fn().mockResolvedValue(undefined),
 			hasConflict: vi.fn().mockResolvedValue(false),
 			findByProfessionalAndStart: vi.fn().mockResolvedValue(null),
+			replaceReminders: vi.fn().mockResolvedValue(undefined),
 		};
 		audit = {
 			record: vi.fn().mockResolvedValue(undefined),
@@ -87,6 +88,11 @@ describe("createAppointmentService", () => {
 			appointment.id,
 			expect.objectContaining({ professionalId: 7, patientId: appointment.patientId }),
 		);
+		const replaceRemindersMock = repo.replaceReminders as unknown as ReturnType<typeof vi.fn>;
+		expect(replaceRemindersMock).toHaveBeenCalledTimes(1);
+		const [appointmentIdArg, remindersArg] = replaceRemindersMock.mock.calls[0];
+		expect(appointmentIdArg).toBe(appointment.id);
+		expect(Array.isArray(remindersArg)).toBe(true);
 	});
 
 	it("throws on conflict when creating appointment", async () => {
@@ -101,6 +107,7 @@ describe("createAppointmentService", () => {
 		).rejects.toThrowError("APPOINTMENT_CONFLICT");
 		expect(repo.createAppointment).not.toHaveBeenCalled();
 		expect(repo.findByProfessionalAndStart).toHaveBeenCalled();
+		expect((repo.replaceReminders as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
 	});
 
 	it("returns existing appointment when conflict is for same patient", async () => {
@@ -121,6 +128,7 @@ describe("createAppointmentService", () => {
 		expect(result.startsAt).toBe(startsAt);
 		expect(repo.createAppointment).not.toHaveBeenCalled();
 		expect(audit.record).not.toHaveBeenCalled();
+		expect((repo.replaceReminders as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
 	});
 
 	it("updates appointment fields and records audit", async () => {
@@ -149,6 +157,10 @@ describe("createAppointmentService", () => {
 			appointment.id,
 			expect.objectContaining({ professionalId: appointment.professionalId }),
 		);
+		expect((repo.replaceReminders as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(
+			appointment.id,
+			expect.any(Array),
+		);
 	});
 
 	it("cancels appointment and records audit", async () => {
@@ -167,6 +179,10 @@ describe("createAppointmentService", () => {
 			"APPOINTMENT_CANCELED",
 			appointment.id,
 			expect.objectContaining({ professionalId: appointment.professionalId }),
+		);
+		expect((repo.replaceReminders as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(
+			appointment.id,
+			[],
 		);
 	});
 

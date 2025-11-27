@@ -9,23 +9,86 @@ import {
 	View,
 	StyleSheet,
 	Platform,
-	KeyboardAvoidingView,
+	ActivityIndicator,
+	ScrollView,
+	Keyboard,
 } from "react-native";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ApiError, loginPatientWithPin } from "@/lib/api";
 
 const CODE_LENGTH = 4;
+
+function formatCpf(value: string) {
+	const digits = value.replace(/\D/g, "").slice(0, 11);
+	const part1 = digits.slice(0, 3);
+	const part2 = digits.slice(3, 6);
+	const part3 = digits.slice(6, 9);
+	const part4 = digits.slice(9, 11);
+
+	let formatted = "";
+	if (part1) {
+		formatted = part1;
+	}
+	if (part2) {
+		formatted += `${formatted ? "." : ""}${part2}`;
+	}
+	if (part3) {
+		formatted += `${formatted ? "." : ""}${part3}`;
+	}
+	if (part4) {
+		formatted += `${formatted ? "-" : ""}${part4}`;
+	}
+
+	return formatted;
+}
 
 export default function PatientLogin() {
 	const router = useRouter();
 	const insets = useSafeAreaInsets();
+	const [cpf, setCpf] = useState("");
 	const [code, setCode] = useState<string[]>(Array(CODE_LENGTH).fill(""));
 	const inputRefs = useRef<Array<TextInput | null>>([]);
-	const keyboardVerticalOffset = 0;
+	const [isSubmitting, setIsSubmitting] = useState(false);
+	const [errorMessage, setErrorMessage] = useState<string | null>(null);
+	const [keyboardHeight, setKeyboardHeight] = useState(0);
+	const bottomInset = useMemo(() => (insets.bottom > 0 ? insets.bottom : 12), [insets.bottom]);
+	const bottomContainerStyle = useMemo(
+		() => [styles.bottomContainer, { paddingBottom: 40 + bottomInset, marginBottom: keyboardHeight }],
+		[bottomInset, keyboardHeight],
+	);
 
+	useEffect(() => {
+		const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+		const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+		const showSubscription = Keyboard.addListener(showEvent, (event) => {
+			const height = event?.endCoordinates?.height ?? 0;
+			setKeyboardHeight(height);
+		});
+		const hideSubscription = Keyboard.addListener(hideEvent, () => {
+			setKeyboardHeight(0);
+		});
+		return () => {
+			showSubscription.remove();
+			hideSubscription.remove();
+		};
+	}, []);
+
+	const sanitizedCpf = useMemo(() => cpf.replace(/\D/g, ""), [cpf]);
+	const isCpfComplete = sanitizedCpf.length === 11;
 	const isCodeComplete = useMemo(
 		() => code.every((digit) => digit.trim().length === 1),
 		[code],
 	);
+	const pin = useMemo(() => code.join(""), [code]);
+	const isFormValid = isCpfComplete && isCodeComplete && !isSubmitting;
+
+	const handleCpfChange = (value: string) => {
+		const digits = value.replace(/\D/g, "").slice(0, 11);
+		setCpf(formatCpf(digits));
+		if (errorMessage) {
+			setErrorMessage(null);
+		}
+	};
 
 	const handleDigitChange = (value: string, index: number) => {
 		const sanitized = value.replace(/\D/g, "").slice(-1);
@@ -35,17 +98,39 @@ export default function PatientLogin() {
 			return next;
 		});
 
+		if (errorMessage) {
+			setErrorMessage(null);
+		}
+
 		if (sanitized && index < CODE_LENGTH - 1) {
 			setTimeout(() => inputRefs.current[index + 1]?.focus(), 10);
 		}
 	};
 
-	const handleConfirm = () => {
-		if (!isCodeComplete) {
+	const handleConfirm = async () => {
+		if (!isFormValid) {
 			return;
 		}
 
-		router.replace("/(drawer)/(tabs)");
+		setIsSubmitting(true);
+		setErrorMessage(null);
+		inputRefs.current.forEach((input) => input?.blur());
+
+		try {
+			await loginPatientWithPin({
+				cpf: sanitizedCpf,
+				pin,
+			});
+			router.replace("/(drawer)/(tabs)");
+		} catch (error) {
+			if (error instanceof ApiError) {
+				setErrorMessage(error.response?.message ?? "Não foi possível acessar. Tente novamente.");
+			} else {
+				setErrorMessage("Não foi possível acessar. Verifique sua conexão e tente novamente.");
+			}
+		} finally {
+			setIsSubmitting(false);
+		}
 	};
 
 	const handleKeyPress = (event: { nativeEvent: { key: string } }, index: number) => {
@@ -64,98 +149,127 @@ export default function PatientLogin() {
 			return next;
 		});
 
+		if (errorMessage) {
+			setErrorMessage(null);
+		}
+
 		setTimeout(() => inputRefs.current[previousIndex]?.focus(), 10);
 	};
 
 	return (
-		<SafeAreaView
-			style={{ flex: 1, backgroundColor: "#0E47A1" }}
-			edges={["top"]}
-		>
-			<KeyboardAvoidingView
+		<SafeAreaView style={styles.safeArea} edges={["top"]}>
+			<ScrollView
 				style={{ flex: 1 }}
-				behavior={Platform.select({ ios: "padding", android: "height" }) ?? "height"}
-				keyboardVerticalOffset={keyboardVerticalOffset}
-				enabled
+				contentContainerStyle={styles.contentContainer}
+				keyboardShouldPersistTaps="handled"
+				showsVerticalScrollIndicator={false}
+				bounces={false}
 			>
-				<View style={styles.topContainer}>
-					<TouchableOpacity
-						style={styles.backButton}
-						onPress={() => router.back()}
-					>
-						<Ionicons name="arrow-back" size={26} color="#FFFFFF" />
-					</TouchableOpacity>
-					<View style={styles.logoWrapper}>
-						<Image
-							source={require("../../assets/images/healthcross.png")}
-							style={styles.logo}
-							resizeMode="contain"
-						/>
-					</View>
-				</View>
-
-				<View style={styles.card}>
-					<Text style={styles.title}>Vamos começar!</Text>
-					<Text style={styles.subtitle}>Digite seu código de verificação</Text>
-
-					<View style={styles.codeContainer}>
-						{code.map((digit, index) => (
-							<TextInput
-								key={index}
-								ref={(ref) => {
-									inputRefs.current[index] = ref;
-								}}
-								style={styles.codeInput}
-								keyboardType="number-pad"
-								maxLength={1}
-								value={digit}
-								onChangeText={(value) => handleDigitChange(value, index)}
-								onKeyPress={(event) => handleKeyPress(event, index)}
-								selectionColor="#0E47A1"
-								returnKeyType="done"
+					<View style={styles.topContainer}>
+						<TouchableOpacity
+							style={styles.backButton}
+							onPress={() => router.back()}
+						>
+							<Ionicons name="arrow-back" size={26} color="#FFFFFF" />
+						</TouchableOpacity>
+						<View style={styles.logoWrapper}>
+							<Image
+								source={require("../../assets/images/healthcross.png")}
+								style={styles.logo}
+								resizeMode="contain"
 							/>
-						))}
+						</View>
 					</View>
 
-					<TouchableOpacity
-						style={[
-							styles.primaryButton,
-							isCodeComplete
-								? styles.primaryButtonEnabled
-								: styles.primaryButtonDisabled,
-						]}
-						onPress={handleConfirm}
-						disabled={!isCodeComplete}
-					>
-						<Text style={styles.primaryButtonText}>Confirmar</Text>
-					</TouchableOpacity>
+					<View style={bottomContainerStyle}>
+						<Text style={styles.title}>Vamos começar!</Text>
+						<Text style={styles.subtitle}>Digite seu código de verificação</Text>
 
-					<TouchableOpacity
-						style={styles.helpWrapper}
-						activeOpacity={0.7}
-					>
-						<Text style={styles.helpText}>Precisa de ajuda para acessar?</Text>
-					</TouchableOpacity>
+						<View style={styles.inputGroup}>
+							<Text style={styles.inputLabel}>CPF</Text>
+							<TextInput
+								style={styles.cpfInput}
+								keyboardType="number-pad"
+								maxLength={14}
+								value={cpf}
+								onChangeText={handleCpfChange}
+								placeholder="000.000.000-00"
+								placeholderTextColor="#9CA3AF"
+								returnKeyType="next"
+								onSubmitEditing={() => inputRefs.current[0]?.focus()}
+							/>
+						</View>
 
-					<TouchableOpacity style={styles.secondaryButton}>
-						<Ionicons name="call" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
-						<Text style={styles.secondaryButtonText}>Ligar para a clínica</Text>
-					</TouchableOpacity>
-				</View>
-			</KeyboardAvoidingView>
+						<View style={styles.codeContainer}>
+							{code.map((digit, index) => (
+								<TextInput
+									key={index}
+									ref={(ref) => {
+										inputRefs.current[index] = ref;
+									}}
+									style={styles.codeInput}
+									keyboardType="number-pad"
+									maxLength={1}
+									value={digit}
+									onChangeText={(value) => handleDigitChange(value, index)}
+									onKeyPress={(event) => handleKeyPress(event, index)}
+									selectionColor="#0E47A1"
+									returnKeyType="done"
+									onSubmitEditing={() => {
+										if (index === CODE_LENGTH - 1) {
+											handleConfirm();
+										}
+									}}
+								/>
+							))}
+						</View>
 
-			<View style={{ height: insets.bottom, backgroundColor: "#FFFFFF" }} />
+						{errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+
+						<TouchableOpacity
+							style={[
+								styles.primaryButton,
+								isFormValid ? styles.primaryButtonEnabled : styles.primaryButtonDisabled,
+							]}
+							onPress={handleConfirm}
+							disabled={!isFormValid}
+						>
+							{isSubmitting ? (
+								<ActivityIndicator color="#FFFFFF" />
+							) : (
+								<Text style={styles.primaryButtonText}>Confirmar</Text>
+							)}
+						</TouchableOpacity>
+
+						<TouchableOpacity style={styles.helpWrapper} activeOpacity={0.7}>
+							<Text style={styles.helpText}>Precisa de ajuda para acessar?</Text>
+						</TouchableOpacity>
+
+						<TouchableOpacity style={styles.secondaryButton}>
+							<Ionicons name="call" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+							<Text style={styles.secondaryButtonText}>Ligar para a clínica</Text>
+						</TouchableOpacity>
+					</View>
+			</ScrollView>
 		</SafeAreaView>
 	);
 }
 
 const styles = StyleSheet.create({
-	topContainer: {
+	safeArea: {
 		flex: 1,
+		backgroundColor: "#0E47A1",
+	},
+	contentContainer: {
+		flexGrow: 1,
+		justifyContent: "space-between",
+	},
+	topContainer: {
 		alignItems: "center",
 		justifyContent: "center",
-		paddingTop: 24,
+		paddingTop: 32,
 		paddingHorizontal: 24,
+		paddingBottom: 16,
 	},
 	backButton: {
 		position: "absolute",
@@ -166,19 +280,18 @@ const styles = StyleSheet.create({
 	logoWrapper: {
 		alignItems: "center",
 		justifyContent: "center",
-		flex: 1,
-		marginTop: -40,
+		marginTop: -24,
 	},
 	logo: {
 		width: 140,
 		height: 140,
 	},
-	card: {
+	bottomContainer: {
 		backgroundColor: "#FFFFFF",
 		borderTopLeftRadius: 36,
 		borderTopRightRadius: 36,
 		paddingHorizontal: 28,
-		paddingVertical: 40,
+		paddingTop: 40,
 	},
 	title: {
 		textAlign: "center",
@@ -193,7 +306,7 @@ const styles = StyleSheet.create({
 		color: "#6B7280",
 	},
 	codeContainer: {
-		marginTop: 32,
+		marginTop: 28,
 		flexDirection: "row",
 		justifyContent: "space-between",
 	},
@@ -246,5 +359,28 @@ const styles = StyleSheet.create({
 		color: "#FFFFFF",
 		fontSize: 16,
 		fontWeight: "600",
+	},
+	inputGroup: {
+		marginTop: 28,
+	},
+	inputLabel: {
+		fontSize: 14,
+		fontWeight: "600",
+		color: "#1F2933",
+		marginBottom: 8,
+	},
+	cpfInput: {
+		height: 52,
+		borderRadius: 14,
+		backgroundColor: "#F1F5F9",
+		paddingHorizontal: 16,
+		fontSize: 18,
+		color: "#0E47A1",
+	},
+	errorText: {
+		marginTop: 16,
+		textAlign: "center",
+		color: "#DC2626",
+		fontSize: 14,
 	},
 });

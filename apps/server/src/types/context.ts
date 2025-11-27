@@ -9,7 +9,9 @@ export type ProfessionalContext = {
 	documentId?: string;
 	specialty?: string | null;
 	phone?: string | null;
+	avatarUrl?: string | null;
 	isActive?: boolean;
+	mustChangePassword?: boolean;
 	createdAt?: Date;
 	updatedAt?: Date;
 };

@@ -1,6 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { TeamMember, TeamMemberStatus, TeamSummaryCounts } from "./data";
-import { fetchProfessionals } from "./api";
+import {
+	createProfessional,
+	deleteProfessional as deleteProfessionalRequest,
+	fetchProfessionals,
+	type ProfessionalCreateInput,
+} from "./api";
 
 const TEAM_SCOPE = "team-directory";
 
@@ -69,5 +74,29 @@ export function useTeamDirectory({ search, status, limit = 25, offset = 0 }: Use
 		},
 		staleTime: 30_000,
 		refetchOnWindowFocus: false,
+	});
+}
+
+export function useCreateProfessional() {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationKey: [TEAM_SCOPE, "create"],
+		mutationFn: (input: ProfessionalCreateInput) => createProfessional(input),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: [TEAM_SCOPE] });
+		},
+	});
+}
+
+export function useDeleteProfessional() {
+	const queryClient = useQueryClient();
+
+	return useMutation<void, Error, number>({
+		mutationKey: [TEAM_SCOPE, "delete"],
+		mutationFn: (userId) => deleteProfessionalRequest(userId),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: [TEAM_SCOPE] });
+		},
 	});
 }

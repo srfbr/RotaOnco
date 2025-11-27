@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Circle, Edit3, Play, XCircle } from "lucide-react";
+import { Circle, Edit3, XCircle } from "lucide-react";
 import type { AppointmentListItem } from "../api";
 import {
 	formatAppointmentDate,
@@ -35,15 +35,6 @@ function AppointmentCard({ appointment }: { appointment: AppointmentListItem }) 
 				</div>
 			</div>
 			<footer className="mt-6 flex flex-wrap gap-3">
-				<Button
-					type="button"
-					variant="outline"
-					size="sm"
-					onClick={() => toast.info("Integração de teleconsulta em breve")}
-				>
-					<Play className="h-4 w-4" />
-					Iniciar
-				</Button>
 				<Button
 					type="button"
 					variant="outline"

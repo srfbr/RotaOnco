@@ -27,6 +27,8 @@ type RouterSetup = {
 	reports: {
 		getAttendanceReport: ReturnType<typeof vi.fn>;
 		getWaitTimesReport: ReturnType<typeof vi.fn>;
+		getAdherenceReport: ReturnType<typeof vi.fn>;
+		getAlertsReport: ReturnType<typeof vi.fn>;
 	};
 };
 
@@ -48,6 +50,8 @@ function buildRouter(): RouterSetup {
 	const reports = {
 		getAttendanceReport: vi.fn(),
 		getWaitTimesReport: vi.fn(),
+		getAdherenceReport: vi.fn(),
+		getAlertsReport: vi.fn(),
 	};
 	const occurrences = {
 		listPatientOccurrences: vi.fn(),
@@ -79,6 +83,8 @@ function buildRouter(): RouterSetup {
 		reports: reports as {
 			getAttendanceReport: ReturnType<typeof vi.fn>;
 			getWaitTimesReport: ReturnType<typeof vi.fn>;
+			getAdherenceReport: ReturnType<typeof vi.fn>;
+			getAlertsReport: ReturnType<typeof vi.fn>;
 		},
 	};
 }

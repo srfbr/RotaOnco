@@ -38,7 +38,9 @@ export const users = mysqlTable(
 		documentId: varchar("document_id", { length: 32 }).notNull().unique(),
 		specialty: varchar("specialty", { length: 191 }),
 		phone: varchar("phone", { length: 32 }),
+		avatarUrl: text("avatar_url"),
 		isActive: boolean("is_active").notNull().default(true),
+		mustChangePassword: boolean("must_change_password").notNull().default(false),
 		createdAt: datetime("created_at", { fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
 		updatedAt: datetime("updated_at", { fsp: 3 })
 			.notNull()
@@ -161,6 +163,7 @@ export const appointmentReminders = mysqlTable(
 			.notNull()
 			.references(() => appointments.id, { onDelete: "cascade" }),
 		channel: mysqlEnum("channel", ["whatsapp", "sms"]).notNull(),
+		recipient: mysqlEnum("recipient", ["patient", "professional"]).notNull().default("patient"),
 		scheduledFor: datetime("scheduled_for", { fsp: 3 }).notNull(),
 		sentAt: datetime("sent_at", { fsp: 3 }),
 		status: mysqlEnum("status", ["queued", "sent", "failed"]).notNull().default("queued"),
@@ -171,6 +174,7 @@ export const appointmentReminders = mysqlTable(
 		uniqAppointmentReminder: uniqueIndex("appointment_reminders_unique_idx").on(
 			table.appointmentId,
 			table.channel,
+			table.recipient,
 			table.scheduledFor,
 		),
 	}),

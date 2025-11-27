@@ -1,5 +1,6 @@
 import type { InferSelectModel } from "drizzle-orm";
-import { occurrences } from "../db/schema/core";
+import { alerts, occurrences } from "../db/schema/core";
+import type { AlertEntity } from "./alerts";
 
 export type OccurrenceEntity = InferSelectModel<typeof occurrences>;
 
@@ -25,11 +26,26 @@ export interface AuditPort {
 	record(action: string, entityId: number, details: Record<string, unknown>): Promise<void>;
 }
 
+type AlertSeverity = typeof alerts.$inferSelect["severity"];
+type AlertStatus = typeof alerts.$inferSelect["status"];
+
+export interface AlertPort {
+	create(input: {
+		patientId: number;
+		kind: string;
+		severity: AlertSeverity;
+		status?: AlertStatus;
+		details?: string | null;
+		createdAt?: Date;
+	}): Promise<AlertEntity>;
+}
+
 export function createOccurrenceService(deps: {
 	repository: OccurrenceRepository;
 	audit: AuditPort;
+	alerts?: AlertPort;
 }) {
-	const { repository, audit } = deps;
+	const { repository, audit, alerts } = deps;
 
 	return {
 		listPatientOccurrences(patientId: number, filters?: { start?: Date; end?: Date; kind?: string }) {
@@ -53,13 +69,14 @@ export function createOccurrenceService(deps: {
 			},
 			context: { professionalId: number },
 		) {
+			const normalizedNotes = input.notes ? input.notes.trim() : null;
 			const occurrence = await repository.createOccurrence({
 				patientId,
 				professionalId: context.professionalId,
 				kind: input.kind.trim(),
 				intensity: input.intensity,
 				source: input.source,
-				notes: input.notes ? input.notes.trim() : null,
+				notes: normalizedNotes,
 			});
 
 			await audit.record("OCCURRENCE_CREATED", occurrence.id, {
@@ -70,9 +87,58 @@ export function createOccurrenceService(deps: {
 				source: occurrence.source,
 			});
 
+			if (alerts && input.source === "patient") {
+				const severity = mapIntensityToAlertSeverity(input.intensity);
+				const details = buildPatientSymptomAlertDetails(
+					occurrence.kind,
+					input.intensity,
+					normalizedNotes ?? occurrence.notes ?? undefined,
+				);
+				await alerts.create({
+					patientId,
+					kind: "sintoma_paciente",
+					severity,
+					status: "open",
+					details,
+					createdAt: occurrence.createdAt,
+				});
+			}
+
 			return occurrence;
 		},
 	};
 }
 
 export type OccurrenceService = ReturnType<typeof createOccurrenceService>;
+
+function mapIntensityToAlertSeverity(intensity: number): AlertSeverity {
+	if (!Number.isFinite(intensity)) {
+		return "low";
+	}
+	if (intensity >= 8) {
+		return "high";
+	}
+	if (intensity >= 4) {
+		return "medium";
+	}
+	return "low";
+}
+
+function clampIntensity(intensity: number): number {
+	if (!Number.isFinite(intensity)) {
+		return 0;
+	}
+	return Math.max(0, Math.min(Math.round(intensity), 10));
+}
+
+function buildPatientSymptomAlertDetails(kind: string, intensity: number, notes?: string | null) {
+	const cleanedKind = kind.trim();
+	const symptom = cleanedKind.length > 0 ? cleanedKind : "Sintoma sem descrição";
+	const safeNotes = notes?.trim();
+	const intensityDisplay = clampIntensity(intensity);
+	const parts = [`Paciente relatou "${symptom}" com intensidade ${intensityDisplay}/10.`];
+	if (safeNotes && safeNotes.length > 0) {
+		parts.push(`Observações: ${safeNotes}.`);
+	}
+	return parts.join(" ");
+}

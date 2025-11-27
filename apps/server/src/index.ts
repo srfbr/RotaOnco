@@ -14,7 +14,7 @@ import { createPatientManagementService } from "./services/patient-management";
 import { createAppointmentService } from "./services/appointments";
 import { createAlertService } from "./services/alerts";
 import { createReportsService } from "./services/reports";
-import { createOccurrenceService } from "./services/occurrences";
+import { createOccurrenceService, type AlertPort } from "./services/occurrences";
 import { createProfessionalDirectoryService, createProfessionalOnboardingService } from "./services/professionals";
 import { patientAuthRepository } from "./repositories/patient-auth";
 import { patientsRepository } from "./repositories/patients";
@@ -82,6 +82,9 @@ const reportsService = createReportsService(reportsRepository);
 
 const occurrenceService = createOccurrenceService({
 	repository: occurrencesRepository,
+	alerts: {
+		create: (input: Parameters<AlertPort["create"]>[0]) => alertService.createAlert(input),
+	} satisfies AlertPort,
 	audit: {
 		record: (action, entityId, details) =>
 			insertAuditLog(action, "occurrence", entityId, details ?? {}, null),
@@ -123,4 +126,15 @@ app.route("/api", apiRouter);
 
 app.get("/", (c) => c.text("OK"));
 
-export default app;
+const port = Number(process.env.PORT ?? 3000);
+const hostname = process.env.HOST ?? "0.0.0.0";
+
+console.log(`HTTP server configured for http://${hostname}:${port}`);
+
+export { app };
+
+export default {
+	port,
+	hostname,
+	fetch: app.fetch,
+};

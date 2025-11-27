@@ -12,6 +12,14 @@ export interface AlertRepository {
 		offset?: number;
 	}): Promise<{ data: AlertEntity[]; total: number }>;
 	findById(id: number): Promise<AlertEntity | null>;
+	create(input: {
+		patientId: number;
+		kind: string;
+		severity: AlertEntity["severity"];
+		status?: AlertEntity["status"];
+		details?: string | null;
+		createdAt?: Date;
+	}): Promise<AlertEntity>;
 	update(
 		id: number,
 		update: {
@@ -37,6 +45,29 @@ export function createAlertService(repo: AlertRepository) {
 
 		getAlert(id: number) {
 			return repo.findById(id);
+		},
+
+		async createAlert(
+			input: {
+				patientId: number;
+				kind: string;
+				severity: AlertEntity["severity"];
+				status?: AlertEntity["status"];
+				details?: string | null;
+				createdAt?: Date;
+			},
+		) {
+			const trimmedKind = input.kind.trim();
+			const normalizedKind = trimmedKind.length > 0 ? trimmedKind : "alerta";
+			const normalizedDetails = input.details?.trim();
+			return repo.create({
+				patientId: input.patientId,
+				kind: normalizedKind,
+				severity: input.severity,
+				status: input.status ?? "open",
+				details: normalizedDetails ? normalizedDetails : null,
+				createdAt: input.createdAt,
+			});
 		},
 
 		async updateAlert(

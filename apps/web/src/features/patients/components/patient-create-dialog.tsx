@@ -1,14 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
-import { Loader2, Plus, Trash2, X } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
+
+import type { PatientCreateInput, PatientStage, PatientStatus } from "../api";
 import { useCreatePatient } from "../hooks";
 import { stageFilterOptions, statusFilterOptions } from "../utils";
-import type { PatientStage, PatientStatus, PatientCreateInput } from "../api";
-import { toast } from "sonner";
 
 type PatientCreateDialogProps = {
 	open: boolean;
@@ -54,50 +63,6 @@ const initialFormState: FormState = {
 	contacts: [],
 };
 
-function useBodyScrollLock(open: boolean) {
-	useEffect(() => {
-		if (!open) return;
-		const previous = document.body.style.overflow;
-		document.body.style.overflow = "hidden";
-		return () => {
-			document.body.style.overflow = previous;
-		};
-	}, [open]);
-}
-
-function ModalContainer({ open, onClose, children }: { open: boolean; onClose: () => void; children: React.ReactNode }) {
-	useBodyScrollLock(open);
-
-	useEffect(() => {
-		if (!open) return;
-		const handleKeyDown = (event: KeyboardEvent) => {
-			if (event.key === "Escape") {
-				onClose();
-			}
-		};
-		window.addEventListener("keydown", handleKeyDown);
-		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [open, onClose]);
-
-	if (!open) {
-		return null;
-	}
-
-	return createPortal(
-		<div className="fixed inset-0 z-50 flex items-center justify-center bg-[#111827]/50 px-4 py-6" onClick={onClose}>
-			<div
-				role="dialog"
-				aria-modal="true"
-				className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white p-8 shadow-2xl"
-				onClick={(event) => event.stopPropagation()}
-			>
-				{children}
-			</div>
-		</div>,
-		document.body,
-	);
-}
-
 function createContact(): ContactForm {
 	return {
 		id: Math.random().toString(36).slice(2),
@@ -123,10 +88,11 @@ export function PatientCreateDialog({ open, onOpenChange }: PatientCreateDialogP
 	const requiredFieldsValid = useMemo(() => {
 		const cpfDigits = formState.cpf.replace(/\D/g, "");
 		const pinDigits = formState.pin.replace(/\D/g, "");
+
 		return (
 			formState.fullName.trim().length > 0 &&
 			cpfDigits.length === 11 &&
-			pinDigits.length === 6
+			pinDigits.length === 4
 		);
 	}, [formState.fullName, formState.cpf, formState.pin]);
 
@@ -164,17 +130,21 @@ export function PatientCreateDialog({ open, onOpenChange }: PatientCreateDialogP
 			...prev,
 			contacts: prev.contacts.map((contact) => {
 				if (contact.id !== id) return contact;
+
 				if (field === "isPrimary") {
 					return { ...contact, isPrimary: Boolean(value) };
 				}
+
 				return { ...contact, [field]: value } as ContactForm;
 			}),
 		}));
 	};
 
-	const handleSubmit = async () => {
+	const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+		event.preventDefault();
+
 		if (!requiredFieldsValid) {
-			toast.error("Preencha nome, CPF com 11 dígitos e PIN de 6 dígitos");
+			toast.error("Preencha nome, CPF com 11 dígitos e PIN de 4 dígitos.");
 			return;
 		}
 
@@ -187,7 +157,9 @@ export function PatientCreateDialog({ open, onOpenChange }: PatientCreateDialogP
 			pin: pinDigits,
 			birthDate: formState.birthDate.trim() ? formState.birthDate : undefined,
 			phone: formState.phone.trim() ? formState.phone.trim() : undefined,
-			emergencyPhone: formState.emergencyPhone.trim() ? formState.emergencyPhone.trim() : undefined,
+			emergencyPhone: formState.emergencyPhone.trim()
+				? formState.emergencyPhone.trim()
+				: undefined,
 			tumorType: formState.tumorType.trim() ? formState.tumorType.trim() : undefined,
 			clinicalUnit: formState.clinicalUnit.trim() ? formState.clinicalUnit.trim() : undefined,
 			stage: formState.stage,
@@ -215,193 +187,156 @@ export function PatientCreateDialog({ open, onOpenChange }: PatientCreateDialogP
 	};
 
 	return (
-		<ModalContainer open={open} onClose={handleClose}>
-			<header className="mb-6 flex items-start justify-between">
-				<div>
-					<p className="text-xs uppercase tracking-wide text-[#6B7280]">Cadastro</p>
-					<h2 className="text-2xl font-semibold text-[#1F2937]">Novo paciente</h2>
-					<p className="mt-1 text-sm text-[#6B7280]">
-						Informe os dados básicos para registrar um novo paciente na plataforma.
-					</p>
-				</div>
-				<Button variant="ghost" size="icon" onClick={handleClose} aria-label="Fechar cadastro">
-					<X className="h-5 w-5 text-[#4B5563]" />
-				</Button>
-			</header>
+		<Dialog open={open} onOpenChange={onOpenChange}>
+			<DialogContent className="max-w-5xl border-t-4 border-[#3663D8] bg-[#F9FBFF]">
+				<DialogHeader className="space-y-2">
+					<DialogTitle className="text-[#1F56B9]">Cadastrar paciente</DialogTitle>
+					<DialogDescription className="text-[#3B3D3B]">
+						Informe os dados essenciais para registrar um novo paciente e conectar sua jornada aos profissionais responsáveis.
+					</DialogDescription>
+				</DialogHeader>
 
-			<div className="space-y-8">
-				<section className="space-y-6">
-					<div className="grid gap-5 md:grid-cols-2">
-						<div className="space-y-3">
-							<div className="space-y-1">
-								<Label className="text-[#1F2937]" htmlFor="create-fullName">
+				<form onSubmit={handleSubmit} className="space-y-6">
+					<section className="space-y-6 rounded-xl border border-[#D9E3FF] bg-white p-6 shadow-sm">
+						<div className="space-y-1">
+							<h4 className="text-sm font-semibold uppercase tracking-wide text-[#3663D8]">
+								Dados do paciente
+							</h4>
+							<p className="text-sm text-[#6E726E]">
+								Preencha informações usadas no acompanhamento clínico e na comunicação.
+							</p>
+						</div>
+
+						<div className="grid gap-5 md:grid-cols-2">
+							<div className="space-y-2">
+								<Label htmlFor="create-fullName" className="text-[#3B3D3B]">
 									Nome completo
 								</Label>
-								<p id="create-fullName-helper" className="text-xs text-[#6B7280]">
-									Identificação exibida para toda a equipe.
-								</p>
+								<p className="text-xs text-[#6E726E]">Identificação exibida para toda a equipe.</p>
+								<Input
+									id="create-fullName"
+									className="border-[#CBD5F5] bg-white focus-visible:border-[#3663D8] focus-visible:ring-2 focus-visible:ring-[#3663D8] focus-visible:ring-opacity-40 placeholder:text-[#8690A7]"
+									value={formState.fullName}
+									onChange={(event) =>
+										setFormState((prev) => ({ ...prev, fullName: event.target.value }))
+									}
+								/>
 							</div>
-							<Input
-								id="create-fullName"
-								aria-describedby="create-fullName-helper"
-								className="bg-white text-[#1F2937] placeholder:text-[#9CA3AF] focus-visible:border-[#2E52B2] focus-visible:ring-[#2E52B2]/30"
-								value={formState.fullName}
-								onChange={(event) =>
-									setFormState((prev) => ({ ...prev, fullName: event.target.value }))
-								}
-							/>
-						</div>
-						<div className="space-y-3">
-							<div className="space-y-1">
-								<Label className="text-[#1F2937]" htmlFor="create-cpf">
+							<div className="space-y-2">
+								<Label htmlFor="create-cpf" className="text-[#3B3D3B]">
 									CPF
 								</Label>
-								<p id="create-cpf-helper" className="text-xs text-[#6B7280]">
-									Informe 11 dígitos numéricos sem separadores.
-								</p>
+								<p className="text-xs text-[#6E726E]">Informe 11 dígitos sem separadores.</p>
+								<Input
+									id="create-cpf"
+									inputMode="numeric"
+									className="border-[#CBD5F5] bg-white focus-visible:border-[#3663D8] focus-visible:ring-2 focus-visible:ring-[#3663D8] focus-visible:ring-opacity-40 placeholder:text-[#8690A7]"
+									value={formState.cpf}
+									onChange={(event) =>
+										setFormState((prev) => ({ ...prev, cpf: event.target.value }))
+									}
+								/>
 							</div>
-							<Input
-								id="create-cpf"
-								aria-describedby="create-cpf-helper"
-								inputMode="numeric"
-								className="bg-white text-[#1F2937] placeholder:text-[#9CA3AF] focus-visible:border-[#2E52B2] focus-visible:ring-[#2E52B2]/30"
-								value={formState.cpf}
-								onChange={(event) =>
-									setFormState((prev) => ({ ...prev, cpf: event.target.value }))
-								}
-							/>
-						</div>
-						<div className="space-y-3">
-							<div className="space-y-1">
-								<Label className="text-[#1F2937]" htmlFor="create-pin">
+							<div className="space-y-2">
+								<Label htmlFor="create-pin" className="text-[#3B3D3B]">
 									PIN de acesso
 								</Label>
-								<p id="create-pin-helper" className="text-xs text-[#6B7280]">
-									Código de 6 dígitos utilizado no app do paciente.
-								</p>
+								<p className="text-xs text-[#6E726E]">Código de 4 dígitos usado no app do paciente.</p>
+								<Input
+									id="create-pin"
+									inputMode="numeric"
+									maxLength={4}
+									className="border-[#CBD5F5] bg-white focus-visible:border-[#3663D8] focus-visible:ring-2 focus-visible:ring-[#3663D8] focus-visible:ring-opacity-40 placeholder:text-[#8690A7]"
+									value={formState.pin}
+									onChange={(event) => {
+										const digits = event.target.value.replace(/\D/g, "").slice(0, 4);
+										setFormState((prev) => ({ ...prev, pin: digits }));
+									}}
+								/>
 							</div>
-							<Input
-								id="create-pin"
-								aria-describedby="create-pin-helper"
-								inputMode="numeric"
-								className="bg-white text-[#1F2937] placeholder:text-[#9CA3AF] focus-visible:border-[#2E52B2] focus-visible:ring-[#2E52B2]/30"
-								value={formState.pin}
-								onChange={(event) =>
-									setFormState((prev) => ({ ...prev, pin: event.target.value }))
-								}
-							/>
-						</div>
-						<div className="space-y-3">
-							<div className="space-y-1">
-								<Label className="text-[#1F2937]" htmlFor="create-birthDate">
+							<div className="space-y-2">
+								<Label htmlFor="create-birthDate" className="text-[#3B3D3B]">
 									Data de nascimento
 								</Label>
-								<p id="create-birthDate-helper" className="text-xs text-[#6B7280]">
-									Usada para validar idade e documentação.
-								</p>
+								<p className="text-xs text-[#6E726E]">Usada para validar idade e documentação.</p>
+								<Input
+									id="create-birthDate"
+									type="date"
+									className="border-[#CBD5F5] bg-white focus-visible:border-[#3663D8] focus-visible:ring-2 focus-visible:ring-[#3663D8] focus-visible:ring-opacity-40 placeholder:text-[#8690A7]"
+									value={formState.birthDate}
+									onChange={(event) =>
+										setFormState((prev) => ({ ...prev, birthDate: event.target.value }))
+									}
+								/>
 							</div>
-							<Input
-								id="create-birthDate"
-								type="date"
-								aria-describedby="create-birthDate-helper"
-								className="bg-white text-[#1F2937] placeholder:text-[#9CA3AF] focus-visible:border-[#2E52B2] focus-visible:ring-[#2E52B2]/30"
-								value={formState.birthDate}
-								onChange={(event) =>
-									setFormState((prev) => ({ ...prev, birthDate: event.target.value }))
-								}
-							/>
-						</div>
-						<div className="space-y-3">
-							<div className="space-y-1">
-								<Label className="text-[#1F2937]" htmlFor="create-phone">
+							<div className="space-y-2">
+								<Label htmlFor="create-phone" className="text-[#3B3D3B]">
 									Telefone
 								</Label>
-								<p id="create-phone-helper" className="text-xs text-[#6B7280]">
-									Contato principal do paciente para avisos.
-								</p>
+								<p className="text-xs text-[#6E726E]">Contato principal para avisos.</p>
+								<Input
+									id="create-phone"
+									className="border-[#CBD5F5] bg-white focus-visible:border-[#3663D8] focus-visible:ring-2 focus-visible:ring-[#3663D8] focus-visible:ring-opacity-40 placeholder:text-[#8690A7]"
+									value={formState.phone}
+									onChange={(event) =>
+										setFormState((prev) => ({ ...prev, phone: event.target.value }))
+									}
+								/>
 							</div>
-							<Input
-								id="create-phone"
-								aria-describedby="create-phone-helper"
-								className="bg-white text-[#1F2937] placeholder:text-[#9CA3AF] focus-visible:border-[#2E52B2] focus-visible:ring-[#2E52B2]/30"
-								value={formState.phone}
-								onChange={(event) =>
-									setFormState((prev) => ({ ...prev, phone: event.target.value }))
-								}
-							/>
-						</div>
-						<div className="space-y-3">
-							<div className="space-y-1">
-								<Label className="text-[#1F2937]" htmlFor="create-emergencyPhone">
+							<div className="space-y-2">
+								<Label htmlFor="create-emergencyPhone" className="text-[#3B3D3B]">
 									Telefone de emergência
 								</Label>
-								<p id="create-emergencyPhone-helper" className="text-xs text-[#6B7280]">
-									Contato secundário em situações críticas.
-								</p>
+								<p className="text-xs text-[#6E726E]">Contato secundário em situações críticas.</p>
+								<Input
+									id="create-emergencyPhone"
+									className="border-[#CBD5F5] bg-white focus-visible:border-[#3663D8] focus-visible:ring-2 focus-visible:ring-[#3663D8] focus-visible:ring-opacity-40 placeholder:text-[#8690A7]"
+									value={formState.emergencyPhone}
+									onChange={(event) =>
+										setFormState((prev) => ({ ...prev, emergencyPhone: event.target.value }))
+									}
+								/>
 							</div>
-							<Input
-								id="create-emergencyPhone"
-								aria-describedby="create-emergencyPhone-helper"
-								className="bg-white text-[#1F2937] placeholder:text-[#9CA3AF] focus-visible:border-[#2E52B2] focus-visible:ring-[#2E52B2]/30"
-								value={formState.emergencyPhone}
-								onChange={(event) =>
-									setFormState((prev) => ({ ...prev, emergencyPhone: event.target.value }))
-								}
-							/>
-						</div>
-						<div className="space-y-3">
-							<div className="space-y-1">
-								<Label className="text-[#1F2937]" htmlFor="create-tumorType">
+							<div className="space-y-2">
+								<Label htmlFor="create-tumorType" className="text-[#3B3D3B]">
 									Tipo de tumor
 								</Label>
-								<p id="create-tumorType-helper" className="text-xs text-[#6B7280]">
-									Ajuda a direcionar a equipe multidisciplinar.
-								</p>
+								<p className="text-xs text-[#6E726E]">Ajuda a direcionar a equipe multidisciplinar.</p>
+								<Input
+									id="create-tumorType"
+									className="border-[#CBD5F5] bg-white focus-visible:border-[#3663D8] focus-visible:ring-2 focus-visible:ring-[#3663D8] focus-visible:ring-opacity-40 placeholder:text-[#8690A7]"
+									value={formState.tumorType}
+									onChange={(event) =>
+										setFormState((prev) => ({ ...prev, tumorType: event.target.value }))
+									}
+								/>
 							</div>
-							<Input
-								id="create-tumorType"
-								aria-describedby="create-tumorType-helper"
-								className="bg-white text-[#1F2937] placeholder:text-[#9CA3AF] focus-visible:border-[#2E52B2] focus-visible:ring-[#2E52B2]/30"
-								value={formState.tumorType}
-								onChange={(event) =>
-									setFormState((prev) => ({ ...prev, tumorType: event.target.value }))
-								}
-							/>
-						</div>
-						<div className="space-y-3">
-							<div className="space-y-1">
-								<Label className="text-[#1F2937]" htmlFor="create-clinicalUnit">
+							<div className="space-y-2">
+								<Label htmlFor="create-clinicalUnit" className="text-[#3B3D3B]">
 									Unidade clínica
 								</Label>
-								<p id="create-clinicalUnit-helper" className="text-xs text-[#6B7280]">
-									Local responsável pelo atendimento do paciente.
-								</p>
+								<p className="text-xs text-[#6E726E]">Local responsável pelo atendimento.</p>
+								<Input
+									id="create-clinicalUnit"
+									className="border-[#CBD5F5] bg-white focus-visible:border-[#3663D8] focus-visible:ring-2 focus-visible:ring-[#3663D8] focus-visible:ring-opacity-40 placeholder:text-[#8690A7]"
+									value={formState.clinicalUnit}
+									onChange={(event) =>
+										setFormState((prev) => ({ ...prev, clinicalUnit: event.target.value }))
+									}
+								/>
 							</div>
-							<Input
-								id="create-clinicalUnit"
-								aria-describedby="create-clinicalUnit-helper"
-								className="bg-white text-[#1F2937] placeholder:text-[#9CA3AF] focus-visible:border-[#2E52B2] focus-visible:ring-[#2E52B2]/30"
-								value={formState.clinicalUnit}
-								onChange={(event) =>
-									setFormState((prev) => ({ ...prev, clinicalUnit: event.target.value }))
-								}
-							/>
 						</div>
-					</div>
-					<div className="grid gap-5 md:grid-cols-2">
-						<div className="space-y-3">
-							<div className="space-y-1">
-								<Label className="text-[#1F2937]" htmlFor="create-stage">
-									Etapa do tratamento
-								</Label>
-								<p id="create-stage-helper" className="text-xs text-[#6B7280]">
-									Define em que momento do tratamento o paciente está.
-								</p>
-							</div>
+					</section>
+
+					<section className="grid gap-6 rounded-xl border border-[#D9E3FF] bg-white p-6 shadow-sm md:grid-cols-2">
+						<div className="space-y-2">
+							<Label htmlFor="create-stage" className="text-[#3B3D3B]">
+								Etapa do tratamento
+							</Label>
+							<p className="text-xs text-[#6E726E]">Define o momento atual da jornada clínica.</p>
 							<select
 								id="create-stage"
-								aria-describedby="create-stage-helper"
-								className="h-10 w-full rounded-lg border border-[#D1D5DB] bg-white px-3 text-sm text-[#1F2937] focus-visible:border-[#2E52B2] focus-visible:ring-[3px] focus-visible:ring-[#2E52B2]/70"
+								className="h-10 w-full rounded-md border border-[#CBD5F5] bg-white px-3 text-sm text-[#3B3D3B] shadow-xs focus-visible:border-[#3663D8] focus-visible:ring-2 focus-visible:ring-[#3663D8] focus-visible:ring-opacity-40"
 								value={formState.stage}
 								onChange={(event) =>
 									setFormState((prev) => ({ ...prev, stage: event.target.value as PatientStage }))
@@ -414,19 +349,14 @@ export function PatientCreateDialog({ open, onOpenChange }: PatientCreateDialogP
 								))}
 							</select>
 						</div>
-						<div className="space-y-3">
-							<div className="space-y-1">
-								<Label className="text-[#1F2937]" htmlFor="create-status">
-									Status
-								</Label>
-								<p id="create-status-helper" className="text-xs text-[#6B7280]">
-									Mostra se o paciente está ativo, em risco ou inativo.
-								</p>
-							</div>
+						<div className="space-y-2">
+							<Label htmlFor="create-status" className="text-[#3B3D3B]">
+								Status
+							</Label>
+							<p className="text-xs text-[#6E726E]">Mostra se o paciente está ativo, em risco ou inativo.</p>
 							<select
 								id="create-status"
-								aria-describedby="create-status-helper"
-								className="h-10 w-full rounded-lg border border-[#D1D5DB] bg-white px-3 text-sm text-[#1F2937] focus-visible:border-[#2E52B2] focus-visible:ring-[3px] focus-visible:ring-[#2E52B2]/70"
+								className="h-10 w-full rounded-md border border-[#CBD5F5] bg-white px-3 text-sm text-[#3B3D3B] shadow-xs focus-visible:border-[#3663D8] focus-visible:ring-2 focus-visible:ring-[#3663D8] focus-visible:ring-opacity-40"
 								value={formState.status}
 								onChange={(event) =>
 									setFormState((prev) => ({ ...prev, status: event.target.value as PatientStatus }))
@@ -439,134 +369,139 @@ export function PatientCreateDialog({ open, onOpenChange }: PatientCreateDialogP
 								))}
 							</select>
 						</div>
-					</div>
-				</section>
+					</section>
 
-				<section className="space-y-4">
-					<div className="flex items-center justify-between">
-						<div>
-							<h3 className="text-sm font-semibold uppercase tracking-wide text-[#6B7280]">
-								Contatos
-							</h3>
-							<p className="text-xs text-[#6B7280]">
-								Cadastre pessoas autorizadas a receber informações do paciente.
-							</p>
+					<section className="space-y-4 rounded-xl border border-[#D9E3FF] bg-white p-6 shadow-sm">
+						<div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+							<div>
+								<h4 className="text-sm font-semibold uppercase tracking-wide text-[#3663D8]">
+									Contatos autorizados
+								</h4>
+								<p className="text-sm text-[#6E726E]">
+									Cadastre responsáveis para emergências e atualizações.
+								</p>
+							</div>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								onClick={handleAddContact}
+								className="border-[#CBD5F5] text-[#3663D8] hover:bg-[#EEF2FF]"
+							>
+								<Plus className="mr-2 h-4 w-4" /> Adicionar contato
+							</Button>
 						</div>
+
+						{formState.contacts.length === 0 ? (
+							<p className="rounded-lg border border-dashed border-[#CBD5F5] bg-[#F5F8FF] p-4 text-sm text-[#6E726E]">
+								Nenhum contato adicionado no momento.
+							</p>
+						) : (
+							<div className="space-y-4">
+								{formState.contacts.map((contact, index) => (
+									<div
+										key={contact.id}
+										className="space-y-4 rounded-lg border border-[#CBD5F5] bg-[#F5F8FF] p-4"
+									>
+										<div className="flex items-center justify-between">
+											<h5 className="text-sm font-semibold text-[#3B3D3B]">
+												Contato {index + 1}
+											</h5>
+											<Button
+												type="button"
+												variant="ghost"
+												size="icon"
+												onClick={() => handleRemoveContact(contact.id)}
+												className="text-[#6E726E] hover:text-[#1F56B9]"
+											>
+												<Trash2 className="h-4 w-4" />
+												<span className="sr-only">Remover contato {index + 1}</span>
+											</Button>
+										</div>
+
+										<div className="grid gap-4 md:grid-cols-3">
+											<div className="space-y-2">
+												<Label htmlFor={`contact-name-${contact.id}`} className="text-sm text-[#3B3D3B]">
+													Nome completo
+												</Label>
+												<Input
+													id={`contact-name-${contact.id}`}
+													className="border-[#CBD5F5] bg-white focus-visible:border-[#3663D8] focus-visible:ring-2 focus-visible:ring-[#3663D8] focus-visible:ring-opacity-40 placeholder:text-[#8690A7]"
+													value={contact.fullName}
+													onChange={(event) =>
+														handleContactChange(contact.id, "fullName", event.target.value)
+													}
+												/>
+											</div>
+											<div className="space-y-2">
+												<Label htmlFor={`contact-relation-${contact.id}`} className="text-sm text-[#3B3D3B]">
+													Relação
+												</Label>
+												<Input
+													id={`contact-relation-${contact.id}`}
+													className="border-[#CBD5F5] bg-white focus-visible:border-[#3663D8] focus-visible:ring-2 focus-visible:ring-[#3663D8] focus-visible:ring-opacity-40 placeholder:text-[#8690A7]"
+													value={contact.relation}
+													onChange={(event) =>
+														handleContactChange(contact.id, "relation", event.target.value)
+													}
+												/>
+											</div>
+											<div className="space-y-2">
+												<Label htmlFor={`contact-phone-${contact.id}`} className="text-sm text-[#3B3D3B]">
+													Telefone
+												</Label>
+												<Input
+													id={`contact-phone-${contact.id}`}
+													className="border-[#CBD5F5] bg-white focus-visible:border-[#3663D8] focus-visible:ring-2 focus-visible:ring-[#3663D8] focus-visible:ring-opacity-40 placeholder:text-[#8690A7]"
+													value={contact.phone}
+													onChange={(event) =>
+														handleContactChange(contact.id, "phone", event.target.value)
+													}
+												/>
+											</div>
+										</div>
+
+										<label className="flex items-center gap-2 text-sm text-[#3B3D3B]">
+											<Checkbox
+												checked={contact.isPrimary}
+												onCheckedChange={(checked) =>
+													handleContactChange(contact.id, "isPrimary", checked === true)
+												}
+											/>
+											<span>Contato principal</span>
+										</label>
+									</div>
+								))}
+							</div>
+						)}
+					</section>
+
+					<DialogFooter className="gap-3">
 						<Button
 							type="button"
 							variant="outline"
-							size="sm"
-							onClick={handleAddContact}
-							className="border-[#CBD5F5] text-[#1F2937] hover:bg-[#EEF2FF]"
+							onClick={handleClose}
+							disabled={isSaving}
 						>
-							<Plus className="mr-2 h-4 w-4 text-[#2E52B2]" /> Adicionar contato
+							Cancelar
 						</Button>
-					</div>
-
-					{formState.contacts.length === 0 ? (
-						<p className="rounded-lg border border-dashed border-[#E5E7EB] bg-[#F9FAFB] p-4 text-sm text-[#6B7280]">
-							Nenhum contato adicionado ainda.
-						</p>
-					) : (
-						<div className="space-y-4">
-							{formState.contacts.map((contact, index) => (
-								<div key={contact.id} className="space-y-4 rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-4">
-									<div className="flex items-center justify-between">
-										<h4 className="text-sm font-semibold text-[#1F2937]">
-											Contato {index + 1}
-										</h4>
-										<Button
-											type="button"
-											variant="ghost"
-											size="icon"
-											onClick={() => handleRemoveContact(contact.id)}
-											aria-label={`Remover contato ${index + 1}`}
-										>
-											<Trash2 className="h-4 w-4 text-[#6B7280]" />
-										</Button>
-									</div>
-									<div className="grid gap-4 md:grid-cols-3">
-										<div className="space-y-2">
-											<Label className="text-sm text-[#1F2937]" htmlFor={`contact-name-${contact.id}`}>
-												Nome completo
-											</Label>
-											<Input
-												id={`contact-name-${contact.id}`}
-												className="bg-white text-[#1F2937] placeholder:text-[#9CA3AF] focus-visible:border-[#2E52B2] focus-visible:ring-[#2E52B2]/30"
-												value={contact.fullName}
-												onChange={(event) =>
-													handleContactChange(contact.id, "fullName", event.target.value)
-												}
-											/>
-										</div>
-										<div className="space-y-2">
-											<Label className="text-sm text-[#1F2937]" htmlFor={`contact-relation-${contact.id}`}>
-												Relação
-											</Label>
-											<Input
-												id={`contact-relation-${contact.id}`}
-												className="bg-white text-[#1F2937] placeholder:text-[#9CA3AF] focus-visible:border-[#2E52B2] focus-visible:ring-[#2E52B2]/30"
-												value={contact.relation}
-												onChange={(event) =>
-													handleContactChange(contact.id, "relation", event.target.value)
-												}
-											/>
-										</div>
-										<div className="space-y-2">
-											<Label className="text-sm text-[#1F2937]" htmlFor={`contact-phone-${contact.id}`}>
-												Telefone
-											</Label>
-											<Input
-												id={`contact-phone-${contact.id}`}
-												className="bg-white text-[#1F2937] placeholder:text-[#9CA3AF] focus-visible:border-[#2E52B2] focus-visible:ring-[#2E52B2]/30"
-												value={contact.phone}
-												onChange={(event) =>
-													handleContactChange(contact.id, "phone", event.target.value)
-												}
-											/>
-										</div>
-									</div>
-									<label className="flex items-center gap-2 text-sm text-[#4B5563]">
-										<Checkbox
-											checked={contact.isPrimary}
-											onCheckedChange={(checked) =>
-												handleContactChange(contact.id, "isPrimary", checked === true)
-											}
-										/>
-										<span>Contato principal</span>
-									</label>
-								</div>
-							))}
-						</div>
-					)}
-				</section>
-
-				<div className="flex items-center justify-end gap-3">
-					<Button
-						type="button"
-						variant="outline"
-						onClick={handleClose}
-						disabled={isSaving}
-					>
-						Cancelar
-					</Button>
-					<Button
-						type="button"
-						onClick={handleSubmit}
-						disabled={!requiredFieldsValid || isSaving}
-						className="bg-[#2E52B2] text-white hover:bg-[#264B96]"
-					>
-						{isSaving ? "Cadastrando..." : "Cadastrar paciente"}
-					</Button>
-				</div>
-
-				{isSaving ? (
-					<div className="flex items-center gap-2 text-sm text-[#4B5563]">
-						<Loader2 className="h-4 w-4 animate-spin" />
-						<span>Salvando alterações...</span>
-					</div>
-				) : null}
-			</div>
-		</ModalContainer>
+						<Button
+							type="submit"
+							disabled={!requiredFieldsValid || isSaving}
+							className="bg-[#3663D8] text-white hover:bg-[#2D52B1]"
+						>
+							{isSaving ? (
+								<>
+									<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+									Salvando...
+								</>
+							) : (
+								"Cadastrar paciente"
+							)}
+						</Button>
+					</DialogFooter>
+				</form>
+			</DialogContent>
+		</Dialog>
 	);
 }

@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createOccurrenceService, type OccurrenceRepository, type AuditPort } from "../occurrences";
+import {
+	createOccurrenceService,
+	type OccurrenceRepository,
+	type AuditPort,
+	type AlertPort,
+} from "../occurrences";
 
 const occurrence = {
 	id: 1,
@@ -73,5 +78,51 @@ describe("createOccurrenceService", () => {
 			source: occurrence.source,
 		});
 		expect(result).toEqual(occurrence);
+	});
+
+	it("creates alert when patient reports a symptom", async () => {
+		const createdAt = new Date("2024-01-02T12:00:00Z");
+		const patientOccurrence = {
+			...occurrence,
+			source: "patient" as const,
+			intensity: 9,
+			kind: "Febre alta",
+			notes: "Observou febre",
+			createdAt,
+		};
+		(repository.createOccurrence as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(patientOccurrence);
+		const alerts: AlertPort = {
+			create: vi.fn().mockResolvedValue({
+				id: 123,
+				patientId: patientOccurrence.patientId,
+				kind: "sintoma_paciente",
+				severity: "high",
+				status: "open",
+				details: null,
+				createdAt,
+				resolvedAt: null,
+				resolvedBy: null,
+			}),
+		};
+		const service = createOccurrenceService({ repository, audit, alerts });
+		await service.createOccurrence(
+			patientOccurrence.patientId,
+			{
+				kind: " Febre alta ",
+				intensity: patientOccurrence.intensity,
+				source: patientOccurrence.source,
+				notes: " Observou febre ",
+			},
+			{ professionalId: patientOccurrence.professionalId },
+		);
+
+		expect(alerts.create).toHaveBeenCalledWith({
+			patientId: patientOccurrence.patientId,
+			kind: "sintoma_paciente",
+			severity: "high",
+			status: "open",
+			details: 'Paciente relatou "Febre alta" com intensidade 9/10. Observações: Observou febre.',
+			createdAt,
+		});
 	});
 });

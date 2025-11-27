@@ -170,7 +170,7 @@ sequenceDiagram
     participant Auth
     participant DB
 
-    Pac ->> Mobile: Informa PIN de 6 dígitos
+    Pac ->> Mobile: Informa PIN de 4 dígitos
     Mobile ->> API: POST /auth/patient-pin
     API ->> DB: Buscar paciente e PIN hash
     API ->> API: Validar tentativas (>=3 bloqueia)

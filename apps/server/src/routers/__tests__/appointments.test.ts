@@ -56,6 +56,8 @@ function buildRouter(): RouterSetup {
 	const reports = {
 		getAttendanceReport: vi.fn(),
 		getWaitTimesReport: vi.fn(),
+		getAdherenceReport: vi.fn(),
+		getAlertsReport: vi.fn(),
 	};
 	const occurrences = {
 		listPatientOccurrences: vi.fn(),

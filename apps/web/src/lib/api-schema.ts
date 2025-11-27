@@ -34,7 +34,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Inicia sessão de paciente via PIN de 6 dígitos.
+         * Inicia sessão de paciente via PIN de 4 dígitos.
          * @description Valida PIN e retorna cookie `patient_session` HttpOnly.
          */
         post: operations["loginPatient"];
@@ -113,7 +113,25 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /** Atualiza dados do próprio perfil profissional. */
+        patch: operations["updateMyProfessionalProfile"];
+        trace?: never;
+    };
+    "/professionals/me/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Atualiza a senha do profissional autenticado. */
+        patch: operations["updateMyProfessionalPassword"];
         trace?: never;
     };
     "/professionals/onboarding": {
@@ -148,7 +166,8 @@ export interface paths {
         /** Atualiza dados do profissional. */
         put: operations["updateProfessional"];
         post?: never;
-        delete?: never;
+        /** Remove profissional. */
+        delete: operations["deleteProfessional"];
         options?: never;
         head?: never;
         patch?: never;
@@ -453,6 +472,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+        "/reports/alerts": {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            /** Lista de alertas. */
+            get: operations["getAlertsReport"];
+            put?: never;
+            post?: never;
+            delete?: never;
+            options?: never;
+            head?: never;
+            patch?: never;
+            trace?: never;
+        };
     "/reports/adverse-effects": {
         parameters: {
             query?: never;
@@ -541,7 +577,9 @@ export interface components {
             documentId: string;
             specialty?: string;
             phone?: string;
+            avatarUrl?: string | null;
             isActive: boolean;
+            mustChangePassword: boolean;
             roles: ("admin" | "professional")[];
             /** Format: date-time */
             createdAt?: string;
@@ -559,6 +597,12 @@ export interface components {
             roles: ("admin" | "professional")[];
         };
         ProfessionalUpdateInput: components["schemas"]["ProfessionalCreateInput"];
+        ProfessionalProfileUpdateInput: {
+            name?: string;
+            specialty?: string | null;
+            phone?: string | null;
+            avatarDataUrl?: string | null;
+        };
         ProfessionalOnboardingRequest: {
             fullName: string;
             /** @description CPF do profissional (somente dígitos). */
@@ -628,7 +672,7 @@ export interface components {
             status?: components["schemas"]["PatientStatus"];
             /** Format: uri */
             audioMaterialUrl?: string | null;
-            /** @description PIN de 6 dígitos, será armazenado como hash Argon2. */
+            /** @description PIN de 4 dígitos, será armazenado como hash Argon2. */
             pin: string;
             contacts?: components["schemas"]["PatientContactInput"][];
         };
@@ -826,12 +870,48 @@ export interface components {
             medianQueueTime?: number;
         };
         AdherenceReport: {
-            /** Format: float */
-            adherenceRate?: number;
-            /** Format: float */
-            abandonmentRisk?: number;
-            /** @description Número de pacientes com duas ou mais faltas consecutivas. */
-            consecutiveAbsences?: number;
+            period?: {
+                start?: string;
+                end?: string;
+            };
+            totals?: {
+                completedAppointments?: number;
+                symptomReportCount?: number;
+            };
+            patients?: {
+                withCompletedAppointments?: number;
+                reportingSymptoms?: number;
+                engaged?: number;
+                /** Format: float */
+                engagementRate?: number;
+            };
+        };
+        AlertsReport: {
+            period?: {
+                start?: string;
+                end?: string;
+            };
+            totals?: {
+                status?: {
+                    open?: number;
+                    acknowledged?: number;
+                    closed?: number;
+                };
+                severity?: {
+                    low?: number;
+                    medium?: number;
+                    high?: number;
+                };
+            };
+            recent?: {
+                id?: number;
+                patientId?: number;
+                kind?: string;
+                severity?: "low" | "medium" | "high";
+                status?: "open" | "acknowledged" | "closed";
+                /** Format: date-time */
+                createdAt?: string;
+            }[];
         };
         AdverseEffectsReport: {
             topOccurrences?: {
@@ -990,7 +1070,7 @@ export interface operations {
                 "application/json": {
                     /** @description CPF do paciente. */
                     cpf: string;
-                    /** @description PIN de 6 dígitos. */
+                    /** @description PIN de 4 dígitos. */
                     pin: string;
                 };
             };
@@ -1154,6 +1234,61 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    updateMyProfessionalProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfessionalProfileUpdateInput"];
+            };
+        };
+        responses: {
+            /** @description Perfil atualizado com sucesso. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            default: components["responses"]["Error"];
+        };
+    };
+    updateMyProfessionalPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    newPassword: string;
+                    confirmPassword: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Senha atualizada com sucesso. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            default: components["responses"]["Error"];
+        };
+    };
     completeProfessionalOnboarding: {
         parameters: {
             query?: never;
@@ -1232,6 +1367,29 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    deleteProfessional: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Profissional removido. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             default: components["responses"]["Error"];
         };
     };
@@ -1940,6 +2098,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdherenceReport"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getAlertsReport: {
+        parameters: {
+            query?: {
+                /** @description Data inicial do intervalo (inclusive). */
+                start?: components["parameters"]["ReportRangeStart"];
+                /** @description Data final do intervalo (inclusive). */
+                end?: components["parameters"]["ReportRangeEnd"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Métricas consolidadas de alertas. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertsReport"];
                 };
             };
             default: components["responses"]["Error"];

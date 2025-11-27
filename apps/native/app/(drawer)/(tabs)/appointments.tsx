@@ -1,9 +1,20 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Container } from "@/components/container";
-import { Ionicons } from "@expo/vector-icons";
+import { ProfessionalAvatar } from "@/components/professional-avatar";
 import {
-	Image,
+	ApiError,
+	confirmPatientAppointment,
+	declinePatientAppointment,
+	fetchPatientAppointments,
+	type PatientAppointment,
+} from "@/lib/api";
+import { Ionicons } from "@expo/vector-icons";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+	ActivityIndicator,
+	Alert,
 	Modal,
+	RefreshControl,
 	ScrollView,
 	StyleSheet,
 	Text,
@@ -12,62 +23,173 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 
-const APPOINTMENTS = [
-	{
-		id: "1",
-		doctor: "Dr. Alan Smith",
-		specialty: "Cardiologista",
-		date: "12 Nov, 2025 às 14:30",
-		photo:
-			"https://images.unsplash.com/photo-1607746882042-944635dfe10e?auto=format&fit=crop&w=160&q=80",
-	},
-	{
-		id: "2",
-		doctor: "Dr. Cristen Remarries",
-		specialty: "Cardiologista",
-		date: "12 Nov, 2025 às 14:30",
-		photo:
-			"https://images.unsplash.com/photo-1607746882042-944635dfe10e?auto=format&fit=crop&w=160&q=80",
-	},
-	{
-		id: "3",
-		doctor: "Dr. Darlene Robertson",
-		specialty: "Cardiologista",
-		date: "12 Nov, 2025 às 14:30",
-		photo:
-			"https://images.unsplash.com/photo-1607746882042-944635dfe10e?auto=format&fit=crop&w=160&q=80",
-	},
-	{
-		id: "4",
-		doctor: "Dr. Brooklyn Simmons",
-		specialty: "Cardiologista",
-		date: "12 Nov, 2025 às 14:30",
-		photo:
-			"https://images.unsplash.com/photo-1607746882042-944635dfe10e?auto=format&fit=crop&w=160&q=80",
-	},
-	{
-		id: "5",
-		doctor: "Dr. Eleanor Padilla",
-		specialty: "Cardiologista",
-		date: "12 Nov, 2025 às 14:30",
-		photo:
-			"https://images.unsplash.com/photo-1607746882042-944635dfe10e?auto=format&fit=crop&w=160&q=80",
-	},
-];
+const STATUS_LABELS = {
+	scheduled: "Agendada",
+	confirmed: "Confirmada",
+	completed: "Concluída",
+	no_show: "Faltou",
+	canceled: "Cancelada",
+} as const;
+
+function formatDateTime(value: string) {
+	const date = new Date(value);
+	if (Number.isNaN(date.getTime())) {
+		return value;
+	}
+	const dateFormatter = new Intl.DateTimeFormat("pt-BR", {
+		day: "2-digit",
+		month: "short",
+		year: "numeric",
+	});
+	const timeFormatter = new Intl.DateTimeFormat("pt-BR", {
+		hour: "2-digit",
+		minute: "2-digit",
+	});
+	return `${dateFormatter.format(date)} às ${timeFormatter.format(date)}`;
+}
 
 export default function PatientAppointmentsTab() {
 	const router = useRouter();
-	const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(null);
+	const queryClient = useQueryClient();
+	const [selectedAppointment, setSelectedAppointment] = useState<PatientAppointment | null>(null);
 
-	const closeModal = () => setSelectedAppointmentId(null);
-	const handleConfirm = () => {
-		console.log("Confirm attendance", selectedAppointmentId);
-		closeModal();
+	const {
+		data,
+		error,
+		isLoading,
+		isFetching,
+		refetch,
+	} = useQuery({
+		queryKey: ["patient", "appointments"],
+		queryFn: () => fetchPatientAppointments({ limit: 50 }),
+		staleTime: 30 * 1000,
+	});
+
+	const appointments = data ?? [];
+	const isRefreshing = isFetching && !isLoading;
+	const errorMessage = useMemo(() => {
+		if (!error) {
+			return null;
+		}
+		if (error instanceof ApiError) {
+			return error.response?.message ?? "Não foi possível carregar suas consultas.";
+		}
+		if (error instanceof Error) {
+			return error.message;
+		}
+		return "Não foi possível carregar suas consultas.";
+	}, [error]);
+
+	const confirmMutation = useMutation({
+		mutationFn: (appointmentId: number) => confirmPatientAppointment(appointmentId),
+		onSuccess: async () => {
+			await queryClient.invalidateQueries({ queryKey: ["patient", "home"] });
+			await queryClient.invalidateQueries({ queryKey: ["patient", "appointments"] });
+		},
+	});
+
+	const declineMutation = useMutation({
+		mutationFn: (appointmentId: number) => declinePatientAppointment(appointmentId),
+		onSuccess: async () => {
+			await queryClient.invalidateQueries({ queryKey: ["patient", "home"] });
+			await queryClient.invalidateQueries({ queryKey: ["patient", "appointments"] });
+		},
+	});
+
+	const closeModal = () => setSelectedAppointment(null);
+
+	const handleConfirm = async () => {
+		if (!selectedAppointment) return;
+		try {
+			await confirmMutation.mutateAsync(selectedAppointment.id);
+			Alert.alert("Presença confirmada", "Sua presença foi confirmada com sucesso.");
+			closeModal();
+		} catch (mutationError) {
+			const message =
+				mutationError instanceof ApiError
+					? mutationError.response?.message ?? "Não foi possível confirmar sua presença."
+					: "Não foi possível confirmar sua presença.";
+			Alert.alert("Erro", message);
+		}
 	};
-	const handleCancel = () => {
-		console.log("Decline attendance", selectedAppointmentId);
-		closeModal();
+
+	const handleDecline = async () => {
+		if (!selectedAppointment) return;
+		try {
+			await declineMutation.mutateAsync(selectedAppointment.id);
+			Alert.alert("Presença atualizada", "Registramos que você não poderá comparecer.");
+			closeModal();
+		} catch (mutationError) {
+			const message =
+				mutationError instanceof ApiError
+					? mutationError.response?.message ?? "Não foi possível atualizar sua presença."
+					: "Não foi possível atualizar sua presença.";
+			Alert.alert("Erro", message);
+		}
 	};
+
+	const renderContent = () => {
+		if (isLoading) {
+			return (
+				<View style={styles.feedbackCard}>
+					<ActivityIndicator color="#2F66F5" />
+					<Text style={styles.feedbackText}>Carregando suas consultas...</Text>
+				</View>
+			);
+		}
+		if (errorMessage) {
+			return (
+				<View style={styles.feedbackCard}>
+					<Text style={[styles.feedbackText, { color: "#B91C1C" }]}>{errorMessage}</Text>
+					<TouchableOpacity style={styles.retryButton} activeOpacity={0.85} onPress={() => refetch()}>
+						<Text style={styles.retryButtonText}>Tentar novamente</Text>
+					</TouchableOpacity>
+				</View>
+			);
+		}
+		if (appointments.length === 0) {
+			return (
+				<View style={styles.feedbackCard}>
+					<Ionicons name="calendar-outline" size={28} color="#2563EB" style={{ marginBottom: 12 }} />
+					<Text style={styles.feedbackText}>Você não possui consultas marcadas.</Text>
+				</View>
+			);
+		}
+		return appointments.map((appointment) => {
+			const professional = appointment.professional;
+			const statusLabel = STATUS_LABELS[appointment.status] ?? appointment.status;
+			return (
+				<TouchableOpacity
+					key={appointment.id}
+					style={styles.card}
+					activeOpacity={0.85}
+					onPress={() => setSelectedAppointment(appointment)}
+				>
+					<ProfessionalAvatar
+						uri={professional?.avatarUrl ?? null}
+						size={56}
+						backgroundColor="#E0EAFF"
+						iconColor="#1D4ED8"
+					/>
+					<View style={{ flex: 1, marginLeft: 16 }}>
+						<Text style={styles.cardDoctor}>{professional?.name ?? "Profissional a definir"}</Text>
+						{professional?.specialty ? (
+							<Text style={styles.cardSpecialty}>{professional.specialty}</Text>
+						) : null}
+						<View style={styles.cardInfoRow}>
+							<Ionicons name="calendar" size={14} color="#6B7280" style={{ marginRight: 6 }} />
+							<Text style={styles.cardDate}>{formatDateTime(appointment.startsAt)}</Text>
+						</View>
+					</View>
+					<View style={styles.statusBadge}>
+						<Text style={styles.statusText}>{statusLabel}</Text>
+					</View>
+				</TouchableOpacity>
+			);
+		});
+	};
+
+	const isModalLoading = confirmMutation.isPending || declineMutation.isPending;
 
 	return (
 		<Container>
@@ -75,6 +197,14 @@ export default function PatientAppointmentsTab() {
 				style={styles.content}
 				contentContainerStyle={styles.scrollContent}
 				showsVerticalScrollIndicator={false}
+				refreshControl={
+					<RefreshControl
+						refreshing={isRefreshing}
+						onRefresh={() => refetch()}
+						colors={["#2F66F5"]}
+						tintColor="#2F66F5"
+					/>
+				}
 			>
 				<View style={styles.header}>
 					<TouchableOpacity
@@ -89,38 +219,43 @@ export default function PatientAppointmentsTab() {
 
 				<Text style={styles.sectionTitle}>Consultas marcadas</Text>
 
-				{APPOINTMENTS.map((appointment) => (
-					<TouchableOpacity
-						key={appointment.id}
-						style={styles.card}
-						activeOpacity={0.85}
-						onPress={() => setSelectedAppointmentId(appointment.id)}
-					>
-						<Image source={{ uri: appointment.photo }} style={styles.avatar} />
-						<View style={{ flex: 1 }}>
-							<Text style={styles.cardDoctor}>{appointment.doctor}</Text>
-							<Text style={styles.cardSpecialty}>{appointment.specialty}</Text>
-							<View style={styles.cardInfoRow}>
-								<Ionicons name="calendar" size={14} color="#6B7280" style={{ marginRight: 6 }} />
-								<Text style={styles.cardDate}>{appointment.date}</Text>
-							</View>
-						</View>
-					</TouchableOpacity>
-				))}
+				{renderContent()}
 			</ScrollView>
 
-			<Modal transparent visible={selectedAppointmentId !== null} animationType="fade">
+			<Modal transparent visible={selectedAppointment !== null} animationType="fade">
 				<View style={styles.modalOverlay}>
 					<View style={styles.modalCard}>
 						<Text style={styles.modalTitle}>Consulta marcada</Text>
 						<Text style={styles.modalDescription}>
 							Confirme sua presença para que possamos manter seu atendimento como programado.
 						</Text>
-						<TouchableOpacity style={styles.primaryButton} activeOpacity={0.9} onPress={handleConfirm}>
-							<Text style={styles.primaryButtonText}>Confirmar presença</Text>
+						<TouchableOpacity
+							style={[styles.primaryButton, isModalLoading ? { opacity: 0.7 } : null]}
+							activeOpacity={0.9}
+							onPress={handleConfirm}
+							disabled={isModalLoading}
+						>
+							{isModalLoading ? (
+								<ActivityIndicator color="#FFFFFF" />
+							) : (
+								<Text style={styles.primaryButtonText}>Confirmar presença</Text>
+							)}
 						</TouchableOpacity>
-						<TouchableOpacity style={styles.secondaryButton} activeOpacity={0.9} onPress={handleCancel}>
+						<TouchableOpacity
+							style={[styles.secondaryButton, isModalLoading ? { opacity: 0.7 } : null]}
+							activeOpacity={0.9}
+							onPress={handleDecline}
+							disabled={isModalLoading}
+						>
 							<Text style={styles.secondaryButtonText}>Não poderei ir</Text>
+						</TouchableOpacity>
+						<TouchableOpacity
+							style={styles.modalClose}
+							activeOpacity={0.8}
+							onPress={closeModal}
+							disabled={isModalLoading}
+						>
+							<Text style={styles.modalCloseText}>Fechar</Text>
 						</TouchableOpacity>
 					</View>
 				</View>
@@ -173,12 +308,6 @@ const styles = StyleSheet.create({
 		marginBottom: 12,
 		backgroundColor: "#FFFFFF",
 	},
-	avatar: {
-		width: 56,
-		height: 56,
-		borderRadius: 18,
-		marginRight: 16,
-	},
 	cardDoctor: {
 		fontSize: 16,
 		fontWeight: "600",
@@ -197,6 +326,45 @@ const styles = StyleSheet.create({
 	cardDate: {
 		fontSize: 13,
 		color: "#6B7280",
+	},
+	statusBadge: {
+		paddingVertical: 6,
+		paddingHorizontal: 12,
+		borderRadius: 999,
+		backgroundColor: "#EEF2FF",
+	},
+	statusText: {
+		fontSize: 12,
+		fontWeight: "600",
+		color: "#1D4ED8",
+	},
+	feedbackCard: {
+		borderRadius: 18,
+		borderWidth: 1,
+		borderColor: "#E2E8F0",
+		backgroundColor: "#FFFFFF",
+		paddingVertical: 28,
+		paddingHorizontal: 20,
+		alignItems: "center",
+		marginBottom: 16,
+	},
+	feedbackText: {
+		fontSize: 14,
+		color: "#4B5563",
+		textAlign: "center",
+		lineHeight: 20,
+	},
+	retryButton: {
+		marginTop: 16,
+		borderRadius: 999,
+		paddingVertical: 10,
+		paddingHorizontal: 20,
+		backgroundColor: "#2F66F5",
+	},
+	retryButtonText: {
+		color: "#FFFFFF",
+		fontWeight: "600",
+		fontSize: 14,
 	},
 	modalOverlay: {
 		flex: 1,
@@ -251,5 +419,18 @@ const styles = StyleSheet.create({
 		color: "#1F2933",
 		fontWeight: "500",
 		fontSize: 15,
+	},
+	modalClose: {
+		marginTop: 16,
+		paddingVertical: 10,
+		paddingHorizontal: 16,
+		borderRadius: 999,
+		borderWidth: 1,
+		borderColor: "#E2E8F0",
+	},
+	modalCloseText: {
+		fontSize: 14,
+		color: "#4B5563",
+		fontWeight: "500",
 	},
 });

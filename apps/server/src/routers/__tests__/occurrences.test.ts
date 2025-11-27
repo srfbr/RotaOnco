@@ -12,6 +12,7 @@ import type { ProfessionalOnboardingService } from "../../services/professionals
 import type { AppEnv } from "../../types/context";
 import { auth } from "../../lib/auth";
 import * as usersRepository from "../../repositories/users";
+import * as patientSession from "../../lib/patient-session";
 
 const noopRateLimit: MiddlewareHandler<AppEnv> = async (_c, next) => {
 	await next();
@@ -23,11 +24,18 @@ type RouterSetup = {
 		listPatientOccurrences: ReturnType<typeof vi.fn>;
 		createOccurrence: ReturnType<typeof vi.fn>;
 	};
+	patients: {
+		getMobileView: ReturnType<typeof vi.fn>;
+		listUpcomingAppointments: ReturnType<typeof vi.fn>;
+	};
 };
 
 function buildRouter(): RouterSetup {
 	const patientAuth = { loginWithPin: vi.fn() } as unknown as PatientAuthService;
-	const patients = { getMobileView: vi.fn() } as unknown as PatientService;
+	const patients = {
+		getMobileView: vi.fn(),
+		listUpcomingAppointments: vi.fn(),
+	};
 	const patientManagement = {
 		listPatients: vi.fn(),
 		createPatient: vi.fn(),
@@ -39,23 +47,25 @@ function buildRouter(): RouterSetup {
 	const reports = {
 		getAttendanceReport: vi.fn(),
 		getWaitTimesReport: vi.fn(),
+		getAdherenceReport: vi.fn(),
+		getAlertsReport: vi.fn(),
 	} as unknown as ReportsService;
 	const occurrences = {
 		listPatientOccurrences: vi.fn(),
 		createOccurrence: vi.fn(),
-	} as unknown as OccurrenceService;
+	};
 	const professionals = {
 		completeOnboarding: vi.fn(),
 	} as unknown as ProfessionalOnboardingService;
 
 	const router = createAppRouter({
 		patientAuth,
-		patients,
+		patients: patients as unknown as PatientService,
 		patientManagement,
 		appointments,
 		alerts,
 		reports,
-		occurrences,
+		occurrences: occurrences as unknown as OccurrenceService,
 		professionals,
 		patientLoginRateLimit: noopRateLimit,
 	});
@@ -65,6 +75,10 @@ function buildRouter(): RouterSetup {
 		occurrences: occurrences as {
 			listPatientOccurrences: ReturnType<typeof vi.fn>;
 			createOccurrence: ReturnType<typeof vi.fn>;
+		},
+		patients: patients as {
+			getMobileView: ReturnType<typeof vi.fn>;
+			listUpcomingAppointments: ReturnType<typeof vi.fn>;
 		},
 	};
 }
@@ -79,10 +93,16 @@ describe("occurrences routes", () => {
 			externalId: "ext-user",
 			roles: ["professional"],
 		});
+		vi.spyOn(patientSession, "verifyPatientSession").mockResolvedValue({
+			patientId: 55,
+			sessionId: "session-1",
+			expiresAt: new Date(Date.now() + 60_000),
+		});
 	});
 
 	afterEach(() => {
 		vi.restoreAllMocks();
+		delete process.env.PATIENT_OCCURRENCE_FALLBACK_PROFESSIONAL_ID;
 	});
 
 	it("lists occurrences for patient", async () => {
@@ -185,5 +205,113 @@ describe("occurrences routes", () => {
 			details: { id: "ID inválido" },
 		});
 		expect(occurrences.listPatientOccurrences).not.toHaveBeenCalled();
+	});
+
+	it("allows authenticated patient to report occurrence", async () => {
+		const { router, occurrences, patients } = buildRouter();
+		const now = new Date();
+		const professionalId = 777;
+		patients.listUpcomingAppointments.mockResolvedValue([
+			{
+				id: 1,
+				patientId: 55,
+				professionalId,
+				startsAt: now,
+				type: "triage",
+				status: "scheduled",
+				notes: null,
+				createdAt: now,
+				updatedAt: now,
+				professional: {
+					id: professionalId,
+					name: "Dra. Silva",
+					specialty: null,
+					avatarUrl: null,
+				},
+			},
+		]);
+		occurrences.createOccurrence.mockResolvedValue({
+			id: 99,
+			patientId: 55,
+			professionalId,
+			kind: "Nausea",
+			intensity: 6,
+			source: "patient",
+			notes: null,
+			createdAt: now,
+		});
+
+		const response = await router.request("/patients/me/occurrences", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Cookie: "patient_session=fake-token",
+			},
+			body: JSON.stringify({ kind: "Nausea", intensity: 6 }),
+		});
+
+		expect(response.status).toBe(201);
+		expect(occurrences.createOccurrence).toHaveBeenCalledWith(
+			55,
+			expect.objectContaining({ kind: "Nausea", intensity: 6, source: "patient" }),
+			{ professionalId },
+		);
+		const payload = await response.json();
+		expect(payload).toMatchObject({ id: 99, source: "patient" });
+	});
+
+	it("falls back to configured professional when no upcoming appointment", async () => {
+		const { router, occurrences, patients } = buildRouter();
+		patients.listUpcomingAppointments.mockResolvedValue([]);
+		const fallbackId = 321;
+		process.env.PATIENT_OCCURRENCE_FALLBACK_PROFESSIONAL_ID = String(fallbackId);
+		const now = new Date();
+		occurrences.createOccurrence.mockResolvedValue({
+			id: 10,
+			patientId: 55,
+			professionalId: fallbackId,
+			kind: "Cansaço",
+			intensity: 4,
+			source: "patient",
+			notes: null,
+			createdAt: now,
+		});
+
+		const response = await router.request("/patients/me/occurrences", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Cookie: "patient_session=fake-token",
+			},
+			body: JSON.stringify({ kind: "Cansaço", intensity: 4 }),
+		});
+
+		expect(response.status).toBe(201);
+		expect(occurrences.createOccurrence).toHaveBeenCalledWith(
+			55,
+			expect.objectContaining({ source: "patient" }),
+			{ professionalId: fallbackId },
+		);
+	});
+
+	it("returns 409 when no professional can be resolved", async () => {
+		const { router, occurrences, patients } = buildRouter();
+		patients.listUpcomingAppointments.mockResolvedValue([]);
+
+		const response = await router.request("/patients/me/occurrences", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Cookie: "patient_session=fake-token",
+			},
+			body: JSON.stringify({ kind: "Dor", intensity: 3 }),
+		});
+
+		expect(response.status).toBe(409);
+		expect(await response.json()).toEqual({
+			code: "PROFESSIONAL_NOT_FOUND",
+			message: "Não foi possível identificar um profissional responsável para este paciente.",
+		});
+		expect(occurrences.createOccurrence).not.toHaveBeenCalled();
 	});
 });

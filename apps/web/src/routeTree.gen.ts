@@ -14,10 +14,12 @@ import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as PatientsRouteImport } from './routes/patients'
+import { Route as NovaSenhaRouteImport } from './routes/nova-senha'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as ConsultasRouteImport } from './routes/consultas'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AlertsAlertIdRouteImport } from './routes/alerts/$alertId'
 
 const TeamRoute = TeamRouteImport.update({
   id: '/team',
@@ -44,6 +46,11 @@ const PatientsRoute = PatientsRouteImport.update({
   path: '/patients',
   getParentRoute: () => rootRouteImport,
 } as any)
+const NovaSenhaRoute = NovaSenhaRouteImport.update({
+  id: '/nova-senha',
+  path: '/nova-senha',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -64,28 +71,37 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AlertsAlertIdRoute = AlertsAlertIdRouteImport.update({
+  id: '/alerts/$alertId',
+  path: '/alerts/$alertId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/consultas': typeof ConsultasRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
+  '/nova-senha': typeof NovaSenhaRoute
   '/patients': typeof PatientsRoute
   '/profile': typeof ProfileRoute
   '/reports': typeof ReportsRoute
   '/sign-up': typeof SignUpRoute
   '/team': typeof TeamRoute
+  '/alerts/$alertId': typeof AlertsAlertIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/consultas': typeof ConsultasRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
+  '/nova-senha': typeof NovaSenhaRoute
   '/patients': typeof PatientsRoute
   '/profile': typeof ProfileRoute
   '/reports': typeof ReportsRoute
   '/sign-up': typeof SignUpRoute
   '/team': typeof TeamRoute
+  '/alerts/$alertId': typeof AlertsAlertIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -93,11 +109,13 @@ export interface FileRoutesById {
   '/consultas': typeof ConsultasRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
+  '/nova-senha': typeof NovaSenhaRoute
   '/patients': typeof PatientsRoute
   '/profile': typeof ProfileRoute
   '/reports': typeof ReportsRoute
   '/sign-up': typeof SignUpRoute
   '/team': typeof TeamRoute
+  '/alerts/$alertId': typeof AlertsAlertIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -106,33 +124,39 @@ export interface FileRouteTypes {
     | '/consultas'
     | '/dashboard'
     | '/login'
+    | '/nova-senha'
     | '/patients'
     | '/profile'
     | '/reports'
     | '/sign-up'
     | '/team'
+    | '/alerts/$alertId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/consultas'
     | '/dashboard'
     | '/login'
+    | '/nova-senha'
     | '/patients'
     | '/profile'
     | '/reports'
     | '/sign-up'
     | '/team'
+    | '/alerts/$alertId'
   id:
     | '__root__'
     | '/'
     | '/consultas'
     | '/dashboard'
     | '/login'
+    | '/nova-senha'
     | '/patients'
     | '/profile'
     | '/reports'
     | '/sign-up'
     | '/team'
+    | '/alerts/$alertId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -140,11 +164,13 @@ export interface RootRouteChildren {
   ConsultasRoute: typeof ConsultasRoute
   DashboardRoute: typeof DashboardRoute
   LoginRoute: typeof LoginRoute
+  NovaSenhaRoute: typeof NovaSenhaRoute
   PatientsRoute: typeof PatientsRoute
   ProfileRoute: typeof ProfileRoute
   ReportsRoute: typeof ReportsRoute
   SignUpRoute: typeof SignUpRoute
   TeamRoute: typeof TeamRoute
+  AlertsAlertIdRoute: typeof AlertsAlertIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -184,6 +210,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PatientsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/nova-senha': {
+      id: '/nova-senha'
+      path: '/nova-senha'
+      fullPath: '/nova-senha'
+      preLoaderRoute: typeof NovaSenhaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -212,6 +245,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/alerts/$alertId': {
+      id: '/alerts/$alertId'
+      path: '/alerts/$alertId'
+      fullPath: '/alerts/$alertId'
+      preLoaderRoute: typeof AlertsAlertIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -220,11 +260,13 @@ const rootRouteChildren: RootRouteChildren = {
   ConsultasRoute: ConsultasRoute,
   DashboardRoute: DashboardRoute,
   LoginRoute: LoginRoute,
+  NovaSenhaRoute: NovaSenhaRoute,
   PatientsRoute: PatientsRoute,
   ProfileRoute: ProfileRoute,
   ReportsRoute: ReportsRoute,
   SignUpRoute: SignUpRoute,
   TeamRoute: TeamRoute,
+  AlertsAlertIdRoute: AlertsAlertIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

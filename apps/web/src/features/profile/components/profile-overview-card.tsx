@@ -1,38 +1,111 @@
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { ProfileViewModel } from "../types";
-import { Camera } from "lucide-react";
+import { Camera, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 type ProfileOverviewCardProps = {
 	profile?: ProfileViewModel | null;
 	isLoading: boolean;
+	onAvatarUpdate?: (avatarDataUrl: string) => Promise<void>;
+	isUpdating?: boolean;
 };
 
-export function ProfileOverviewCard({ profile, isLoading }: ProfileOverviewCardProps) {
+export function ProfileOverviewCard({ profile, isLoading, onAvatarUpdate, isUpdating = false }: ProfileOverviewCardProps) {
 	const initials = getInitials(profile?.fullName ?? "");
 	const roleLabel = profile?.roleLabel ?? "Usuário";
 	const formattedDocument = formatDocument(profile?.documentId);
 	const formattedPhone = formatPhone(profile?.phone);
+	const [hasImageError, setHasImageError] = useState(false);
+	const avatarUrl = profile?.avatarUrl ?? null;
+	const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+	useEffect(() => {
+		setHasImageError(false);
+	}, [avatarUrl]);
+
+	const shouldShowAvatarImage = Boolean(avatarUrl) && !hasImageError && !isLoading;
+	const isBusy = isLoading || isUpdating;
+	const isAvatarDisabled = isBusy || !onAvatarUpdate;
+
+	const handleFileSelection = async (event: ChangeEvent<HTMLInputElement>) => {
+		const file = event.target.files?.[0] ?? null;
+		event.target.value = "";
+		if (!file) {
+			return;
+		}
+
+		if (!onAvatarUpdate) {
+			toast.error("Funcionalidade de atualização de foto indisponível.");
+			return;
+		}
+
+		if (!/^image\/(png|jpe?g|webp)$/.test(file.type)) {
+			toast.error("Escolha uma imagem nos formatos PNG, JPG ou WEBP.");
+			return;
+		}
+
+		if (file.size > 2 * 1024 * 1024) {
+			toast.error("Imagem deve ter no máximo 2MB.");
+			return;
+		}
+
+		try {
+			const dataUrl = await fileToDataUrl(file);
+			setHasImageError(false);
+			await onAvatarUpdate(dataUrl);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Não foi possível atualizar a foto.";
+			toast.error(message);
+		}
+	};
 
 	return (
 		<section className="flex flex-col gap-6">
 			<article className="flex flex-col items-center gap-6 rounded-xl border border-[#E5E5E5] bg-white p-8">
 				<div className="relative">
-					<div className="flex size-32 items-center justify-center rounded-full bg-[#E8EEFF] text-3xl font-semibold text-[#3663D8] sm:size-40">
-						{isLoading ? <Skeleton className="h-10 w-10 rounded-full" /> : initials || "??"}
+					<div className="flex size-32 items-center justify-center overflow-hidden rounded-full bg-[#E8EEFF] text-3xl font-semibold text-[#3663D8] sm:size-40">
+						{isLoading ? (
+							<Skeleton className="h-full w-full rounded-full" />
+						) : shouldShowAvatarImage ? (
+							<img
+								src={avatarUrl ?? ""}
+								alt={`Foto de ${profile?.fullName ?? "profissional"}`}
+								className="size-full object-cover"
+								onError={() => setHasImageError(true)}
+							/>
+						) : (
+							initials || "??"
+						)}
 					</div>
+					{isUpdating ? (
+						<div className="absolute inset-0 flex items-center justify-center rounded-full bg-white/80">
+							<Loader2 className="h-6 w-6 animate-spin text-[#3663D8]" />
+						</div>
+					) : null}
 					<Button
 						type="button"
 						size="icon"
 						variant="secondary"
 						className="absolute bottom-0 right-0 h-9 w-9 rounded-full border border-[#CBD5F5] bg-white text-[#3663D8] shadow-md"
-						disabled={isLoading}
-						onClick={() => toast.info("Atualização de foto disponível em breve")}
+						disabled={isAvatarDisabled}
+						onClick={() => {
+							if (isAvatarDisabled) return;
+							fileInputRef.current?.click();
+						}}
 					>
 						<Camera className="h-4 w-4" />
 					</Button>
+					<input
+						ref={fileInputRef}
+						type="file"
+						accept="image/png,image/jpeg,image/webp"
+						className="sr-only"
+						onChange={handleFileSelection}
+					/>
 				</div>
+				<p className="text-xs text-[#6E726E]">Formatos aceitos: PNG, JPG ou WEBP (até 2MB)</p>
 				<div className="text-center">
 					{isLoading ? (
 						<>
@@ -119,4 +192,21 @@ function OverviewItem({ label, value, isLoading }: { label: string; value?: stri
 			)}
 		</li>
 	);
+}
+
+async function fileToDataUrl(file: File) {
+	return new Promise<string>((resolve, reject) => {
+		const reader = new FileReader();
+		reader.onload = () => {
+			if (typeof reader.result === "string") {
+				resolve(reader.result);
+			} else {
+				reject(new Error("Falha ao ler o arquivo selecionado."));
+			}
+		};
+		reader.onerror = () => {
+			reject(new Error("Não foi possível processar a imagem."));
+		};
+		reader.readAsDataURL(file);
+	});
 }

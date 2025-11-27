@@ -2,25 +2,39 @@ import { AppLayout } from "@/components/app-layout";
 import { ProfileHero } from "@/features/profile/components/profile-hero";
 import { ProfileInfoForm } from "@/features/profile/components/profile-info-form";
 import { ProfileOverviewCard } from "@/features/profile/components/profile-overview-card";
-import { useProfessionalProfile } from "@/features/profile/hooks";
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { useProfessionalProfile, useUpdateProfessionalProfile } from "@/features/profile/hooks";
+import { type ProfessionalProfileUpdateInput } from "@/features/profile/api";
+import { createFileRoute } from "@tanstack/react-router";
+import { toast } from "sonner";
+import { requireActiveProfessional } from "@/lib/route-guards";
 
 export const Route = createFileRoute("/profile")({
 	beforeLoad: async ({ context }) => {
-		const session = await context.authClient.getSession();
-		if (!session.data) {
-			throw redirect({ to: "/login" });
-		}
+		await requireActiveProfessional(context);
 	},
 	component: ProfileRoute,
 });
 
 function ProfileRoute() {
 	const profileQuery = useProfessionalProfile();
+	const updateProfileMutation = useUpdateProfessionalProfile();
 	const profile = profileQuery.data ?? null;
 	const errorMessage = profileQuery.isError
 		? ((profileQuery.error instanceof Error ? profileQuery.error.message : null) ?? "Não foi possível carregar seus dados.")
 		: null;
+
+	const handleProfileUpdate = async (payload: ProfessionalProfileUpdateInput, successMessage: string) => {
+		try {
+			if (Object.keys(payload).length === 0) {
+				return;
+			}
+			await updateProfileMutation.mutateAsync(payload);
+			toast.success(successMessage);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Não foi possível atualizar o perfil.";
+			toast.error(message);
+		}
+	};
 
 	return (
 		<AppLayout>
@@ -43,8 +57,20 @@ function ProfileRoute() {
 				) : null}
 
 				<div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
-					<ProfileOverviewCard profile={profile} isLoading={profileQuery.isLoading} />
-					<ProfileInfoForm profile={profile} isLoading={profileQuery.isLoading} />
+					<ProfileOverviewCard
+						profile={profile}
+						isLoading={profileQuery.isLoading}
+						onAvatarUpdate={async (avatarDataUrl) =>
+							handleProfileUpdate({ avatarDataUrl }, "Foto atualizada com sucesso.")
+						}
+						isUpdating={updateProfileMutation.isPending}
+					/>
+					<ProfileInfoForm
+						profile={profile}
+						isLoading={profileQuery.isLoading}
+						onSubmit={async (payload) => handleProfileUpdate(payload, "Dados atualizados com sucesso.")}
+						isSubmitting={updateProfileMutation.isPending}
+					/>
 				</div>
 			</div>
 		</AppLayout>

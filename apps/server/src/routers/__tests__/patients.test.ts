@@ -41,6 +41,8 @@ function buildRouter(): RouterSetup {
 	const reports = {
 		getAttendanceReport: vi.fn(),
 		getWaitTimesReport: vi.fn(),
+		getAdherenceReport: vi.fn(),
+		getAlertsReport: vi.fn(),
 	} as unknown as ReportsService;
 	const occurrences = {
 		listPatientOccurrences: vi.fn(),
@@ -158,7 +160,7 @@ describe("patients routes", () => {
 			body: JSON.stringify({
 				fullName: " Ana ",
 				cpf: "12345678901",
-				pin: "123456",
+				pin: "1234",
 				phone: "",
 				contacts: [
 					{ fullName: "Contato", relation: "Mãe", phone: "119999", isPrimary: true },
@@ -240,7 +242,7 @@ describe("patients routes", () => {
 				Authorization: "Bearer token",
 				"Content-Type": "application/json",
 			},
-			body: JSON.stringify({ fullName: "Ana", cpf: "12345678901", pin: "123456" }),
+			body: JSON.stringify({ fullName: "Ana", cpf: "12345678901", pin: "1234" }),
 		});
 
 		expect(response.status).toBe(409);

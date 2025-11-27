@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authClient } from "@/lib/auth-client";
+import { apiClient } from "@/lib/api-client";
 import { useAuthSession } from "@/providers/auth-session-provider";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
@@ -68,8 +69,17 @@ function LoginForm() {
 					password: value.password,
 				},
 				{
-					onSuccess: () => {
+					onSuccess: async () => {
 						toast.success("Login realizado com sucesso");
+						try {
+							const { data, error } = await apiClient.GET("/professionals/me");
+							if (!error && data?.mustChangePassword) {
+								navigate({ to: "/nova-senha" });
+								return;
+							}
+						} catch {
+							// fallback to dashboard navigation below
+						}
 						navigate({ to: "/dashboard" });
 					},
 					onError: (error) => {

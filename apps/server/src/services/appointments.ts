@@ -3,6 +3,7 @@ import { appointmentReminders, appointments, patients, users } from "../db/schem
 
 export type AppointmentEntity = InferSelectModel<typeof appointments>;
 export type AppointmentReminderEntity = InferSelectModel<typeof appointmentReminders>;
+export type AppointmentReminderRecipient = AppointmentReminderEntity["recipient"];
 type PatientRow = InferSelectModel<typeof patients>;
 type UserRow = InferSelectModel<typeof users>;
 
@@ -55,6 +56,14 @@ export interface AppointmentRepository {
 		professionalId: number;
 		startsAt: Date;
 	}): Promise<AppointmentEntity | null>;
+	replaceReminders(
+		appointmentId: number,
+		reminders: Array<{
+			channel: AppointmentReminderEntity["channel"];
+			recipient: AppointmentReminderRecipient;
+			scheduledFor: Date;
+		}>,
+	): Promise<void>;
 }
 
 export interface AuditPort {
@@ -103,6 +112,8 @@ export function createAppointmentService(deps: {
 				throw new Error("APPOINTMENT_CONFLICT");
 			}
 			const appointment = await repo.createAppointment({ ...input, notes: normalizedNotes });
+			const reminders = buildReminderSchedule(appointment.startsAt);
+			await repo.replaceReminders(appointment.id, reminders);
 			await audit.record("APPOINTMENT_CREATED", appointment.id, {
 				patientId: appointment.patientId,
 				professionalId: context.professionalId,
@@ -152,6 +163,10 @@ export function createAppointmentService(deps: {
 			if (!updated) {
 				throw new Error("APPOINTMENT_NOT_FOUND");
 			}
+			if (update.startsAt) {
+				const reminders = buildReminderSchedule(updated.startsAt);
+				await repo.replaceReminders(id, reminders);
+			}
 			await audit.record("APPOINTMENT_UPDATED", id, {
 				professionalId: context.professionalId,
 				patientId: existing.patientId,
@@ -170,6 +185,7 @@ export function createAppointmentService(deps: {
 			}
 			const notes = context.reason !== undefined ? normalizeNotes(context.reason) : null;
 			await repo.updateStatus(id, "canceled", notes ?? existing.notes ?? null);
+			await repo.replaceReminders(id, []);
 			await audit.record("APPOINTMENT_CANCELED", id, {
 				professionalId: context.professionalId,
 				patientId: existing.patientId,
@@ -188,6 +204,9 @@ export function createAppointmentService(deps: {
 			}
 			const notes = context.notes !== undefined ? normalizeNotes(context.notes) : undefined;
 			await repo.updateStatus(id, status, notes ?? existing.notes ?? null);
+			if (status === "canceled") {
+				await repo.replaceReminders(id, []);
+			}
 			await audit.record("APPOINTMENT_STATUS_UPDATED", id, {
 				professionalId: context.professionalId,
 				patientId: existing.patientId,
@@ -229,3 +248,43 @@ export function createAppointmentService(deps: {
 }
 
 export type AppointmentService = ReturnType<typeof createAppointmentService>;
+
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
+const REMINDER_OFFSETS_DAYS = [10, 5, 1, 0] as const;
+
+type ReminderTemplate = {
+	channel: AppointmentReminderEntity["channel"];
+	recipient: AppointmentReminderRecipient;
+};
+
+const RECIPIENT_TEMPLATES: ReminderTemplate[] = [
+	{ recipient: "patient", channel: "whatsapp" },
+	{ recipient: "professional", channel: "sms" },
+];
+
+function buildReminderSchedule(startsAt: Date) {
+	const startTime = startsAt.getTime();
+	const now = Date.now();
+	const reminders: Array<{
+		channel: AppointmentReminderEntity["channel"];
+		recipient: AppointmentReminderRecipient;
+		scheduledFor: Date;
+	}> = [];
+
+	for (const days of REMINDER_OFFSETS_DAYS) {
+		const scheduledForValue = new Date(startTime - days * DAY_IN_MS);
+		if (scheduledForValue.getTime() < now) {
+			continue;
+		}
+		for (const template of RECIPIENT_TEMPLATES) {
+			reminders.push({
+				recipient: template.recipient,
+				channel: template.channel,
+				scheduledFor: new Date(scheduledForValue.getTime()),
+			});
+		}
+	}
+
+	reminders.sort((a, b) => a.scheduledFor.getTime() - b.scheduledFor.getTime());
+	return reminders;
+}

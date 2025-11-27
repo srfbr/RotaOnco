@@ -1,4 +1,4 @@
-import { BarChart3, FilePieChart } from "lucide-react";
+import { BarChart3 } from "lucide-react";
 
 export function ReportsHero({ totalReports }: { totalReports: number }) {
 	const totalLabel = totalReports === 1 ? "relatório disponível" : "relatórios disponíveis";
@@ -21,10 +21,6 @@ export function ReportsHero({ totalReports }: { totalReports: number }) {
 						<div className="flex items-center gap-2 rounded-full bg-[#F3F6FD] px-4 py-2 text-sm font-semibold text-[#3663D8]">
 							<BarChart3 className="h-4 w-4" />
 							{totalReports} {totalLabel}
-						</div>
-						<div className="flex items-center gap-2 rounded-full bg-[#E8F2FF] px-4 py-2 text-sm font-semibold text-[#1F56B9]">
-							<FilePieChart className="h-4 w-4" />
-							Exportação em CSV e PDF
 						</div>
 					</div>
 				</div>
